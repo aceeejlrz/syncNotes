@@ -1,12 +1,12 @@
 # SyncNotes: Architecture Blueprint
 
-> **Document version:** 1.0 · **Created:** 2026-09-28 · **Status:** Active, Phase 0 in progress
+> **Document version:** 1.2 · **Created:** 2026-09-28 · **Updated:** 2026-09-29 · **Status:** Active, Phase 0 in progress
 >
 > **What this is:** the single source of truth for how SyncNotes v1 is designed and built, from an empty Android Studio project to a finished, portfolio-ready app with a backend.
 >
 > **Living document:** when the design changes, update this file in the same commit as the code and add an entry to the [Decision log](#15-decision-log).
 >
-> **Placeholders:** `com.yourname.syncnotes` stands for your real package name, and `syncnotes-api` stands for your Fly.io app name.
+> **Placeholders:** `syncnotes-api` stands for your Fly.io app name (not yet chosen). The Android package is `com.jezrel.syncnotes`.
 
 ---
 
@@ -158,7 +158,7 @@ The key idea: the UI never talks to the network. The user edits Room, Room updat
 
 ### 4.3 Tech stack
 
-Exact versions are pinned in `android/gradle/libs.versions.toml` and `server/pom.xml`, chosen as the latest stable releases at setup time.
+Exact versions are pinned in `gradle/libs.versions.toml` and `server/pom.xml`, chosen as the latest stable releases at setup time.
 
 **Android app**
 
@@ -192,23 +192,27 @@ Exact versions are pinned in `android/gradle/libs.versions.toml` and `server/pom
 
 ## 5. Repository and code structure
 
-### 5.1 Monorepo layout
+### 5.1 Repository layout
 
-One repository holds the app, the server and the docs, so the whole system is visible from a single GitHub page.
+One repository holds everything: the Android app lives at the repository root (so this folder is the Android Studio project), and the server and docs sit alongside it in their own folders. The whole system is visible from a single GitHub page.
 
 ```
-SyncNotes/                          <- git repository root
-├── android/                        <- the Android Studio project (open THIS folder)
-│   ├── app/
-│   │   ├── schemas/                <- exported Room schema JSON (committed)
-│   │   └── src/
-│   │       ├── main/
-│   │       ├── debug/              <- debug-only resources (network security config)
-│   │       ├── test/               <- JVM unit tests
-│   │       └── androidTest/        <- instrumented tests (Room, Compose UI)
-│   ├── gradle/libs.versions.toml
-│   └── settings.gradle.kts
-├── server/                         <- Spring Boot project (Maven)
+syncNote/                           <- git repository root AND the Android Studio project (open THIS folder)
+├── app/
+│   ├── schemas/                    <- exported Room schema JSON (committed)
+│   └── src/
+│       ├── main/
+│       ├── debug/                  <- debug-only resources (network security config)
+│       ├── test/                   <- JVM unit tests
+│       └── androidTest/            <- instrumented tests (Room, Compose UI)
+├── gradle/
+│   ├── libs.versions.toml
+│   └── wrapper/
+├── build.gradle.kts
+├── settings.gradle.kts             <- includes :app
+├── gradlew, gradlew.bat
+├── gradle.properties
+├── server/                         <- Spring Boot project (Maven), independent of the Gradle build
 │   ├── src/main/java/...
 │   ├── src/main/resources/
 │   │   ├── application.yml
@@ -218,22 +222,24 @@ SyncNotes/                          <- git repository root
 │   ├── Dockerfile
 │   └── fly.toml
 ├── docs/
-│   ├── ARCHITECTURE.md             <- this file
 │   ├── sync_protocol_model.py      <- executable model of the sync rules (section 9)
 │   ├── TESTING.md                  <- two-emulator test script and results
 │   └── api.http                    <- runnable API requests (VS Code REST Client)
 ├── .github/workflows/              <- android.yml, server.yml
 ├── .gitattributes
 ├── .gitignore
+├── ARCHITECTURE.md                 <- this file (at the repo root)
 ├── README.md
 ├── LEARNINGS.md
 └── TODO.md
 ```
 
+The Android Gradle build (root `settings.gradle.kts`, which includes only `:app`) and the server's Maven build are independent; the `server/` folder is not part of the Gradle project.
+
 ### 5.2 Android packages
 
 ```
-android/app/src/main/java/com/yourname/syncnotes/
+app/src/main/java/com/jezrel/syncnotes/
 ├── SyncNotesApp.kt                 # @HiltAndroidApp, WorkManager config, foreground sync trigger
 ├── MainActivity.kt                 # single activity, hosts NavDisplay
 ├── core/
@@ -261,7 +267,7 @@ android/app/src/main/java/com/yourname/syncnotes/
 ### 5.3 Server packages
 
 ```
-server/src/main/java/com/yourname/syncnotes/
+server/src/main/java/com/jezrel/syncnotes/
 ├── SyncNotesApplication.java
 ├── config/
 │   ├── SecurityConfig.java         # stateless JWT resource server; /api/v1/auth/** is public
@@ -1725,11 +1731,11 @@ Shows the device id, account id, cursor, pending count, last success, last error
 | Server merge rules | Every rule M1–M10 and the three worked examples | JUnit 5, parameterized tests | `server/src/test` (unit) |
 | Server sync service | Push and pull transactions, change numbers, pagination, two concurrent pushes for one user, cross-account isolation | Spring Boot test + Testcontainers PostgreSQL | `server/src/test` (integration) |
 | Server auth | Register, login, refresh rotation, logout, 401 cases, rate limits | Spring Boot test + Testcontainers | `server/src/test` |
-| App apply rules | `ChangeRules` push and pull cases, including the fork case and stale pages | JUnit | `android/app/src/test` |
-| App repository | `saveNote` dirty-bit logic, lazy creation, search escaping | Room in-memory database | `android/app/src/androidTest` |
-| App sync engine | Push-then-pull loop, pagination, lost responses, 401 refresh, retries | MockWebServer | `android/app/src/test` or `androidTest` |
-| ViewModels | UI state changes | kotlinx-coroutines-test, Turbine, fake repositories | `android/app/src/test` |
-| UI | Create a note, edit it, search, trash and restore | Compose UI test (a few only) | `android/app/src/androidTest` |
+| App apply rules | `ChangeRules` push and pull cases, including the fork case and stale pages | JUnit | `app/src/test` |
+| App repository | `saveNote` dirty-bit logic, lazy creation, search escaping | Room in-memory database | `app/src/androidTest` |
+| App sync engine | Push-then-pull loop, pagination, lost responses, 401 refresh, retries | MockWebServer | `app/src/test` or `androidTest` |
+| ViewModels | UI state changes | kotlinx-coroutines-test, Turbine, fake repositories | `app/src/test` |
+| UI | Create a note, edit it, search, trash and restore | Compose UI test (a few only) | `app/src/androidTest` |
 | End to end | The conflict matrix below, on two emulators against a real server | Manual script, results recorded | `docs/TESTING.md` |
 
 ### 12.2 Non-negotiable tests
@@ -1794,12 +1800,12 @@ gantt
 
 **Goal:** the repository, tooling and empty skeleton are in place, so every later phase only adds code.
 
-- [ ] **0.1 Monorepo layout** (§5.1). Close Android Studio. In `C:\Users\Admin\AndroidStudioProjects\SyncNotes`, create an `android` folder and move every project file and folder into it, except `.git` if it exists. Delete the regenerated folders instead of moving them: `.idea`, `.gradle`, `build`, `app\build`. Reopen Android Studio with **File → Open → SyncNotes\android**, let Gradle sync, run the app.
-- [ ] **0.2 Git.** `git init` at the `SyncNotes` root if it isn't a repository yet. Add a root `.gitignore` (Android, Gradle, Maven, IDE files, `.env`) and a `.gitattributes` with `* text=auto`, `gradlew text eol=lf`, `mvnw text eol=lf`, `*.bat text eol=crlf`. Commit.
-- [ ] **0.3 Docs.** Add this file as `docs/ARCHITECTURE.md` and the model as `docs/sync_protocol_model.py`. Create `LEARNINGS.md`, `TODO.md` and a short `README.md` placeholder. Commit.
-- [ ] **0.4 Dependencies.** In `libs.versions.toml`, add everything from §4.3: Compose, Navigation 3 (`navigation3-runtime`, `navigation3-ui`), Lifecycle (`lifecycle-viewmodel-compose`, `lifecycle-runtime-compose`, `lifecycle-viewmodel-navigation3`, `lifecycle-process`), Hilt (plus `hilt-lifecycle-viewmodel-compose`, `hilt-work` and the AndroidX Hilt compiler), Room 3, DataStore, WorkManager, Retrofit with its kotlinx.serialization converter, OkHttp with logging, the markdown renderer, and the test libraries. Add the plugins: KSP, Hilt, Room 3 and kotlinx.serialization. Set `minSdk = 26`. Enable `buildFeatures { buildConfig = true }`. Review the file before syncing.
-- [ ] **0.5 Skeleton.** Create the packages from §5.2. Add `SyncNotesApp` with `@HiltAndroidApp` (registered in the manifest) and mark `MainActivity` with `@AndroidEntryPoint`. Set `android:allowBackup="false"`.
-- [ ] **0.6 GitHub and CI.** Create the GitHub repository, push, and add `.github/workflows/android.yml` (§14.5). Run `git update-index --chmod=+x android/gradlew` so the Linux runner can execute it.
+- [x] **0.1 Repository layout** (§5.1). The Android Studio project already sits at the repository root, so no restructuring is needed — the root folder is the project you open. Create the `docs/` folder for the model and test notes. The `server/` folder is added later in Phase 2. Confirm Gradle sync is clean and the app runs.
+- [x] **0.2 Git.** `git init` at the `SyncNotes` root if it isn't a repository yet. Add a root `.gitignore` (Android, Gradle, Maven, IDE files, `.env`) and a `.gitattributes` with `* text=auto`, `gradlew text eol=lf`, `mvnw text eol=lf`, `*.bat text eol=crlf`. Commit.
+- [x] **0.3 Docs.** This file lives at the repository root as `ARCHITECTURE.md`. Add the model as `docs/sync_protocol_model.py`. Create `LEARNINGS.md`, `TODO.md` and a short `README.md` placeholder. Commit.
+- [x] **0.4 Dependencies.** In `libs.versions.toml`, add everything from §4.3: Compose, Navigation 3 (`navigation3-runtime`, `navigation3-ui`), Lifecycle (`lifecycle-viewmodel-compose`, `lifecycle-runtime-compose`, `lifecycle-viewmodel-navigation3`, `lifecycle-process`), Hilt (plus `hilt-lifecycle-viewmodel-compose`, `hilt-work` and the AndroidX Hilt compiler), Room 3, DataStore, WorkManager, Retrofit with its kotlinx.serialization converter, OkHttp with logging, the markdown renderer, and the test libraries. Add the plugins: KSP, Hilt, Room 3 and kotlinx.serialization. Set `minSdk = 26`. Enable `buildFeatures { buildConfig = true }`. Review the file before syncing.
+- [x] **0.5 Skeleton.** Create the packages from §5.2. Add `SyncNotesApp` with `@HiltAndroidApp` (registered in the manifest) and mark `MainActivity` with `@AndroidEntryPoint`. Set `android:allowBackup="false"`.
+- [ ] **0.6 GitHub and CI.** Create the GitHub repository, push, and add `.github/workflows/android.yml` (§14.5). Run `git update-index --chmod=+x gradlew` so the Linux runner can execute it.
 - [ ] **0.7 Read-through.** Read §7 and §9 end to end. Write any questions in `TODO.md`.
 
 **Exit criteria:** the app builds and runs with Hilt set up. CI is green. The blueprint is committed.
@@ -1944,7 +1950,7 @@ flowchart LR
 ### 14.2 Android build configuration
 
 ```kotlin
-// android/app/build.gradle.kts
+// app/build.gradle.kts
 android {
     buildFeatures {
         compose = true
@@ -1994,21 +2000,18 @@ Reference it from the manifest with `android:networkSecurityConfig="@xml/network
 name: android
 on:
   push:
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["app/**", "gradle/**", "*.gradle.kts", "gradle.properties", ".github/workflows/android.yml"]
   pull_request:
-    paths: ["android/**"]
+    paths: ["app/**", "gradle/**", "*.gradle.kts", "gradle.properties"]
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: android
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25   # matches gradle/gradle-daemon-jvm.properties (toolchainVersion=25)
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
@@ -2048,8 +2051,9 @@ Each entry: what was decided, why, and what it costs. Add new entries at the end
 **ADR-001: Local-first, Room is the UI's source of truth.**
 Why: instant UI, full offline support. Cost: every network result must go through Room, and sync needs real engineering.
 
-**ADR-002: Monorepo with `android/`, `server/` and `docs/`.**
+**ADR-002: Single repository — the Android app at the root, with `server/` and `docs/` alongside.**
 Why: one place to see the whole system, one README. Cost: two build systems in one repository (separate CI workflows handle it).
+Changed 2026-09-29: flattened from a nested `android/` folder to the Android project at the repository root, since the project was generated there and there is no second Gradle module to justify the extra nesting. The `server/` and `docs/` folders remain as siblings, so the "whole system in one repo" rationale is unchanged.
 
 **ADR-003: Note ids are UUIDs generated on the device.**
 Why: notes can be created offline with no server round trip. Cost: the server must validate ids and scope them by user (hence the `(user_id, id)` primary key).
@@ -2086,6 +2090,7 @@ Why: stable, Google's recommended navigation for Compose, and the back stack is 
 
 **ADR-014: Room 3.**
 Why: Room 2 is maintenance-only and Room 3 is coroutine-first. Cost: most tutorials still show Room 2, so watch the differences in §7.5. Fallback: Room 2.8 works with this exact design if a blocker appears.
+Changed 2026-09-29: the `androidx.room3` artifacts are not published on Google Maven (all 404; `androidx.room` tops out at 2.8.5), so Phase 0 pins the **Room 2.8.5 fallback**. The §7.5 Room 3 specifics (`androidx.room3.*` packages, mandatory `setDriver`, `withWriteTransaction`) will be reconciled to the Room 2.8 API in Phase 1 unless Room 3 ships first.
 
 **ADR-015: Markdown text only, `LIKE` search in v1.**
 Why: keeps the data model to plain strings and makes merging simple. Cost: no rich formatting. Full-text search can come later.
