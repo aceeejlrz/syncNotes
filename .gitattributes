@@ -1,0 +1,31 @@
+# Normalize line endings on checkin; check out native.
+* text=auto
+
+# Scripts that must keep a specific line ending regardless of platform.
+*.bat       text eol=crlf
+gradlew     text eol=lf
+mvnw        text eol=lf
+*.sh        text eol=lf
+
+# Source and text files are LF.
+*.kt        text eol=lf
+*.kts       text eol=lf
+*.java      text eol=lf
+*.py        text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.xml       text eol=lf
+*.toml      text eol=lf
+*.sql       text eol=lf
+*.pro       text eol=lf
+*.http      text eol=lf
+
+# Binary assets — never normalize.
+*.png       binary
+*.webp      binary
+*.jpg       binary
+*.jpeg      binary
+*.jar       binary
+*.keystore  binary
+*.jks       binary

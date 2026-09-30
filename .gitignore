@@ -13,3 +13,15 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Secrets / environment
+.env
+*.env
+!/.env.example
+
+# Server (Maven) build output — added in Phase 2
+/server/target/
+**/target/
+
+# OS
+Thumbs.db
