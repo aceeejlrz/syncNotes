@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.room)
 }
 
 android {
@@ -37,6 +38,14 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+}
+
+room {
+    // Committed to source control; every schema change bumps the version and adds a migration test.
+    schemaDirectory("$projectDir/schemas")
 }
 
 dependencies {
@@ -66,6 +75,7 @@ dependencies {
 
     // Local storage: Room + DataStore
     implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
 
@@ -91,6 +101,10 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.okhttp.mockwebserver)
+    // JVM-runnable Android tests (Room DAO/repository via Robolectric, so they run in CI)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.junit)
 
     // Instrumented tests
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -105,4 +119,13 @@ dependencies {
     // Debug tooling
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+// Robolectric instruments the JDK via deep reflection; JDK 17+ (here, JDK 25) locks
+// down the internal packages it needs, so open them for the unit-test JVM.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    jvmArgs(
+        "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
+        "--enable-native-access=ALL-UNNAMED",
+    )
 }
