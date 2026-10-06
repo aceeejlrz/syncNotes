@@ -1,6 +1,6 @@
 # SyncNotes: Architecture Blueprint
 
-> **Document version:** 1.2 · **Created:** 2026-09-28 · **Updated:** 2026-09-29 · **Status:** Active, Phase 0 in progress
+> **Document version:** 1.3 · **Created:** 2026-09-28 · **Updated:** 2026-10-05 · **Status:** Active, Phase 1 in progress
 >
 > **What this is:** the single source of truth for how SyncNotes v1 is designed and built, from an empty Android Studio project to a finished, portfolio-ready app with a backend.
 >
@@ -42,8 +42,8 @@ Update this table at the end of each phase.
 
 | Phase | Target dates | Status | Git tag |
 |---|---|---|---|
-| 0. Foundation | Sep 28 – Oct 4 | In progress | — |
-| 1. Offline notes app | Oct 5 – Oct 18 | Not started | `v0.1-offline` |
+| 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
+| 1. Offline notes app | Oct 5 – Oct 18 | In progress (data layer done) | `v0.1-offline` |
 | 2. Backend | Oct 19 – Nov 1 | Not started | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
@@ -703,19 +703,18 @@ abstract class SyncNotesDatabase : RoomDatabase() {
     abstract fun syncStateDao(): SyncStateDao
 }
 
-// DatabaseModule
+// DatabaseModule (Room 2.8.5 fallback — see ADR-014)
 @Provides @Singleton
 fun provideDatabase(@ApplicationContext context: Context): SyncNotesDatabase =
-    Room.databaseBuilder<SyncNotesDatabase>(context, "syncnotes.db")
-        .setDriver(AndroidSQLiteDriver())
-        .build()
+    Room.databaseBuilder(context, SyncNotesDatabase::class.java, "syncnotes.db")
+        .build()   // no setDriver: default framework SQLite, which Robolectric shadows and room-ktx targets
 ```
 
-- Export the schema with the Room 3 Gradle plugin (`room3 { schemaDirectory("$projectDir/schemas") }`) and commit the JSON files.
+- Export the schema with the Room Gradle plugin (`room { schemaDirectory("$projectDir/schemas") }`, plugin id `androidx.room`) and commit the JSON files.
 - Every schema change bumps the version and adds an auto-migration (or a manual `Migration`) with a migration test.
 - **Never** use a destructive fallback migration. It would delete unsynced notes.
 
-Room 3 differences to remember when following Room 2 tutorials: packages are `androidx.room3.*`, a driver must be set (`setDriver`), transactions use `withWriteTransaction { }`, and type converters are annotated `@ColumnTypeConverter`. This design doesn't need any type converters.
+Room version note: this project uses the **Room 2.8.5** fallback (ADR-014; `androidx.room3` is unpublished). So packages are `androidx.room.*`, no driver is set (the default framework SQLite path is the one Robolectric shadows and that `room-ktx`'s `withTransaction` targets), coroutine transactions use `withTransaction { }` (from `room-ktx`), and type converters would be `@TypeConverter` — this design needs none. If/when Room 3 ships, switch to `androidx.room3.*`, an explicit `setDriver(AndroidSQLiteDriver())`, and `withWriteTransaction { }`.
 
 ---
 
@@ -1732,7 +1731,7 @@ Shows the device id, account id, cursor, pending count, last success, last error
 | Server sync service | Push and pull transactions, change numbers, pagination, two concurrent pushes for one user, cross-account isolation | Spring Boot test + Testcontainers PostgreSQL | `server/src/test` (integration) |
 | Server auth | Register, login, refresh rotation, logout, 401 cases, rate limits | Spring Boot test + Testcontainers | `server/src/test` |
 | App apply rules | `ChangeRules` push and pull cases, including the fork case and stale pages | JUnit | `app/src/test` |
-| App repository | `saveNote` dirty-bit logic, lazy creation, search escaping | Room in-memory database | `app/src/androidTest` |
+| App repository | `saveNote` dirty-bit logic, lazy creation, search escaping | Room in-memory DB via Robolectric | `app/src/test` (JVM, runs in CI — ADR-017) |
 | App sync engine | Push-then-pull loop, pagination, lost responses, 401 refresh, retries | MockWebServer | `app/src/test` or `androidTest` |
 | ViewModels | UI state changes | kotlinx-coroutines-test, Turbine, fake repositories | `app/src/test` |
 | UI | Create a note, edit it, search, trash and restore | Compose UI test (a few only) | `app/src/androidTest` |
@@ -1814,9 +1813,9 @@ gantt
 
 **Goal:** a complete, pleasant notes app with no network code at all, but with the sync bookkeeping (UUIDs, dirty bits, base versions) already in place.
 
-- [ ] **1.1 Room.** `NoteEntity`, `SyncStateEntity`, `DirtyField`, DAOs, `SyncNotesDatabase`, `DatabaseModule`, schema export (§7).
-- [ ] **1.2 Repository.** `NotesRepository`: `observeActive(query)` (escape `%`, `_` and `\`), `observeTrash()`, `getNote(id)`, `saveNote` (§7.4), `setPinned`, `moveToTrash`, `restore`. Inject `Clock`. `requestSync()` can be an empty stub for now.
-- [ ] **1.3 Repository tests** (in-memory Room): lazy creation, only changed fields become dirty, search escaping, ordering.
+- [x] **1.1 Room.** `NoteEntity`, `SyncStateEntity`, `DirtyField`, DAOs, `SyncNotesDatabase`, `DatabaseModule`, schema export (§7).
+- [x] **1.2 Repository.** `NotesRepository`: `observeActive(query)` (escape `%`, `_` and `\`), `observeTrash()`, `getNote(id)`, `saveNote` (§7.4), `setPinned`, `moveToTrash`, `restore`. Inject `Clock`. `requestSync()` can be an empty stub for now.
+- [x] **1.3 Repository tests** (in-memory Room): lazy creation, only changed fields become dirty, search escaping, ordering.
 - [ ] **1.4 Navigation.** Keys and `SyncNotesNavDisplay` (§6.3).
 - [ ] **1.5 Notes list.** Search box, pinned first, new-note button, empty state, menu.
 - [ ] **1.6 Editor.** `TextFieldState`, autosave with flush on close (§6.5), edit/preview toggle with the markdown renderer, pin and trash actions, character limits.
@@ -2097,6 +2096,9 @@ Why: keeps the data model to plain strings and makes merging simple. Cost: no ri
 
 **ADR-016: A single `:app` Gradle module in v1.**
 Why: less build configuration while learning. Cost: less enforced separation. Modularize later if the app grows.
+
+**ADR-017: Room and ViewModel tests run on the JVM via Robolectric, in `app/src/test`.**
+Why: CI runs on an emulator-less runner (and the dev machine has no emulator), and the CI command is `testDebugUnitTest`. Instrumented (`androidTest`) tests would never run there, so the doc's original `androidTest` placement for repository tests is moved to `test/`. Robolectric 4.17 runs the in-memory Room database on the JVM. Cost: on JDK 25 Robolectric needs JDK-internal access, so the unit-test JVM is launched with `--add-exports=java.base/jdk.internal.access=ALL-UNNAMED` (see LEARNINGS). True on-device checks remain the two-emulator conflict matrix (§12.3).
 
 *Template for new entries:*
 

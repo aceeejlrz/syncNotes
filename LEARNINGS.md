@@ -7,6 +7,24 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ---
 
+## Phase 1 — Offline notes app
+
+### Robolectric 4.17 runs on JDK 25 — with one JVM flag
+Room DAO/repository tests must run on the JVM (CI has no emulator; the CI task is
+`testDebugUnitTest`), so they use Robolectric. On JDK 25 the first run failed:
+`Failed to interact with raw FileDescriptor internals` →
+`IllegalAccessException: ... cannot access class jdk.internal.access.SharedSecrets ...
+module java.base does not export jdk.internal.access`. Fix: launch the unit-test JVM with
+`--add-exports=java.base/jdk.internal.access=ALL-UNNAMED` (set via `tasks.withType<Test>()`
+in `app/build.gradle.kts`). After that, `@RunWith(AndroidJUnit4::class)` +
+`@Config(application = Application::class)` + an in-memory Room DB works on the JVM.
+
+### Room 2.8 data layer differs from the doc's Room 3 snippets
+Built on the Room 2.8.5 fallback (ADR-014): `Room.databaseBuilder(ctx, Klass::class.java, name)`
+with **no** `setDriver` (keeps the framework SQLite path Robolectric shadows), and
+`withTransaction` from `room-ktx` instead of Room 3's `withWriteTransaction`. The Room Gradle
+plugin (`androidx.room` 2.8.5) exports the schema to `app/schemas/` and is config-cache compatible.
+
 ## Phase 0 — Foundation
 
 ### AGP 9 has built-in Kotlin — no `kotlin-android` plugin needed

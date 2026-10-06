@@ -15,10 +15,9 @@ Scratch space for the next change and open questions
   (catalog entry kept; commented in `app/build.gradle.kts`). When wiring the editor preview
   (§6.5, step 1.6): bump the project Kotlin — with matching KSP + compose plugin — or pick a
   renderer version built against Kotlin ≤2.2.
-- [ ] **Room 3 vs 2.8.** `androidx.room3` is unpublished, so the build uses Room 2.8.5
-  (ADR-014 fallback). Reconcile §7.5's Room 3 code (`androidx.room3.*`, `setDriver`,
-  `withWriteTransaction`) to the Room 2.8 API when building the data layer (step 1.1),
-  or upgrade if Room 3 ships.
+- [x] **Room 3 vs 2.8.** `androidx.room3` is unpublished, so the build uses Room 2.8.5
+  (ADR-014 fallback). Done in step 1.1: §7.5 reconciled, data layer on Room 2.8
+  (`withTransaction`, no `setDriver`). Revisit if Room 3 ships.
 
 ## Open questions from the §7 / §9 read-through (step 0.7)
 
