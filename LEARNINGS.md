@@ -19,6 +19,20 @@ module java.base does not export jdk.internal.access`. Fix: launch the unit-test
 in `app/build.gradle.kts`). After that, `@RunWith(AndroidJUnit4::class)` +
 `@Config(application = Application::class)` + an in-memory Room DB works on the JVM.
 
+### Compose material-icons is frozen at 1.7.8 and not in the 2026 BOM
+`androidx.compose.material.icons.*` is no longer a transitive dep of material3, and
+`material-icons-core` stopped at 1.7.8 (the BOM doesn't manage it). Pin it explicitly;
+its `ImageVector` constants still work on the Compose 1.10 runtime. Avoided the heavy
+`material-icons-extended` — used core icons (Add/Search/MoreVert/Star), with a tinted
+Star standing in for pin/unpin.
+
+### Navigation 3: `entry {}` is a scope member, not a top-level import
+In `entryProvider { entry<Key> { ... } }`, `entry` resolves on the `EntryProviderScope`
+receiver, so importing `androidx.navigation3.runtime.entry` fails to compile. The
+importable top-level symbols are `entryProvider`, `rememberNavBackStack`,
+`rememberSaveableStateHolderNavEntryDecorator`, and `NavDisplay`;
+`rememberViewModelStoreNavEntryDecorator` lives in `androidx.lifecycle.viewmodel.navigation3`.
+
 ### Room 2.8 data layer differs from the doc's Room 3 snippets
 Built on the Room 2.8.5 fallback (ADR-014): `Room.databaseBuilder(ctx, Klass::class.java, name)`
 with **no** `setDriver` (keeps the framework SQLite path Robolectric shadows), and

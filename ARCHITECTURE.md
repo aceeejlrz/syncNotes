@@ -43,7 +43,7 @@ Update this table at the end of each phase.
 | Phase | Target dates | Status | Git tag |
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
-| 1. Offline notes app | Oct 5 – Oct 18 | In progress (data layer done) | `v0.1-offline` |
+| 1. Offline notes app | Oct 5 – Oct 18 | In progress (through 1.5: data layer + list UI) | `v0.1-offline` |
 | 2. Backend | Oct 19 – Nov 1 | Not started | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
@@ -1816,8 +1816,8 @@ gantt
 - [x] **1.1 Room.** `NoteEntity`, `SyncStateEntity`, `DirtyField`, DAOs, `SyncNotesDatabase`, `DatabaseModule`, schema export (§7).
 - [x] **1.2 Repository.** `NotesRepository`: `observeActive(query)` (escape `%`, `_` and `\`), `observeTrash()`, `getNote(id)`, `saveNote` (§7.4), `setPinned`, `moveToTrash`, `restore`. Inject `Clock`. `requestSync()` can be an empty stub for now.
 - [x] **1.3 Repository tests** (in-memory Room): lazy creation, only changed fields become dirty, search escaping, ordering.
-- [ ] **1.4 Navigation.** Keys and `SyncNotesNavDisplay` (§6.3).
-- [ ] **1.5 Notes list.** Search box, pinned first, new-note button, empty state, menu.
+- [x] **1.4 Navigation.** Keys and `SyncNotesNavDisplay` (§6.3).
+- [x] **1.5 Notes list.** Search box, pinned first, new-note button, empty state, menu.
 - [ ] **1.6 Editor.** `TextFieldState`, autosave with flush on close (§6.5), edit/preview toggle with the markdown renderer, pin and trash actions, character limits.
 - [ ] **1.7 Trash.** List and restore. Trashed notes are read-only.
 - [ ] **1.8 Look and feel.** Theme, dark mode, content descriptions, 48 dp touch targets.
