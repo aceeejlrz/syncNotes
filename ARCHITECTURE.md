@@ -167,7 +167,7 @@ Exact versions are pinned in `gradle/libs.versions.toml` and `server/pom.xml`, c
 | Language and UI | Kotlin, Jetpack Compose, Material 3 | Current standard for Android |
 | Navigation | Navigation 3 (`androidx.navigation3`) | Stable since November 2025 and Google's recommended navigation for Compose. The back stack is ordinary state you own |
 | Dependency injection | Hilt (with KSP) | Standard. Integrates with ViewModels and WorkManager |
-| Local database | Room 3 (`androidx.room3`, KSP) | Room 2 is now maintenance-only. Room 3 is coroutine-first, which matches this design |
+| Local database | Room 2.8 (`androidx.room`, KSP) | `androidx.room3` (Room 3) is unpublished, so this uses the Room 2.8.5 fallback (ADR-014); still coroutine-first and matches this design |
 | Small key-value data | DataStore (Preferences) | Async replacement for SharedPreferences |
 | Background work | WorkManager | Survives restarts, handles network constraints and backoff |
 | Networking | Retrofit, OkHttp, kotlinx.serialization | Well documented. OkHttp's `Authenticator` handles token refresh |
@@ -497,7 +497,7 @@ class NoteEditorViewModel @AssistedInject constructor(
 
 | Hilt module | Provides |
 |---|---|
-| `DatabaseModule` | `SyncNotesDatabase` (Room 3 with `AndroidSQLiteDriver`), `NoteDao`, `SyncStateDao` |
+| `DatabaseModule` | `SyncNotesDatabase` (Room 2.8, default framework SQLite — no `setDriver`), `NoteDao`, `SyncStateDao` |
 | `NetworkModule` | `Json`, `OkHttpClient` (auth interceptor, authenticator, timeouts, debug logging), `Retrofit`, `AuthApi`, `SyncApi`, plus a second plain client used only for token refresh |
 | `CoroutinesModule` | `@ApplicationScope CoroutineScope` (`SupervisorJob()` + `Dispatchers.Default`), `@IoDispatcher` |
 | `WorkModule` | `WorkManager` |
@@ -513,7 +513,7 @@ class NoteEditorViewModel @AssistedInject constructor(
 
 ## 7. Local data model
 
-### 7.1 Entities (Room 3)
+### 7.1 Entities (Room)
 
 ```kotlin
 @Entity(
@@ -660,7 +660,7 @@ sequenceDiagram
 
 ```kotlin
 suspend fun saveNote(id: String, title: String, body: String) {
-    val changed = db.withWriteTransaction {
+    val changed = db.withTransaction {
         val now = clock.nowMillis()
         val existing = noteDao.get(id)
         when {
@@ -1474,7 +1474,7 @@ class SyncEngine @Inject constructor(
             val batch = noteDao.dirtyBatch(PUSH_BATCH_SIZE)
             if (batch.isEmpty()) return
             val response = api.push(PushRequest(device.id, device.name, batch.map { it.toChangeDto() }))
-            db.withWriteTransaction { applyPushResults(sent = batch, results = response.results) }
+            db.withTransaction { applyPushResults(sent = batch, results = response.results) }
             if (batch.size < PUSH_BATCH_SIZE) return
         }
     }
@@ -1483,7 +1483,7 @@ class SyncEngine @Inject constructor(
         var cursor = syncStateDao.get()?.cursor ?: 0L
         do {
             val page = api.pull(since = cursor, limit = PULL_PAGE_SIZE)
-            db.withWriteTransaction {
+            db.withTransaction {
                 applyPulled(page.notes)
                 saveCursor(page.nextCursor)
             }
@@ -1802,7 +1802,7 @@ gantt
 - [x] **0.1 Repository layout** (§5.1). The Android Studio project already sits at the repository root, so no restructuring is needed — the root folder is the project you open. Create the `docs/` folder for the model and test notes. The `server/` folder is added later in Phase 2. Confirm Gradle sync is clean and the app runs.
 - [x] **0.2 Git.** `git init` at the `SyncNotes` root if it isn't a repository yet. Add a root `.gitignore` (Android, Gradle, Maven, IDE files, `.env`) and a `.gitattributes` with `* text=auto`, `gradlew text eol=lf`, `mvnw text eol=lf`, `*.bat text eol=crlf`. Commit.
 - [x] **0.3 Docs.** This file lives at the repository root as `ARCHITECTURE.md`. Add the model as `docs/sync_protocol_model.py`. Create `LEARNINGS.md`, `TODO.md` and a short `README.md` placeholder. Commit.
-- [x] **0.4 Dependencies.** In `libs.versions.toml`, add everything from §4.3: Compose, Navigation 3 (`navigation3-runtime`, `navigation3-ui`), Lifecycle (`lifecycle-viewmodel-compose`, `lifecycle-runtime-compose`, `lifecycle-viewmodel-navigation3`, `lifecycle-process`), Hilt (plus `hilt-lifecycle-viewmodel-compose`, `hilt-work` and the AndroidX Hilt compiler), Room 3, DataStore, WorkManager, Retrofit with its kotlinx.serialization converter, OkHttp with logging, the markdown renderer, and the test libraries. Add the plugins: KSP, Hilt, Room 3 and kotlinx.serialization. Set `minSdk = 26`. Enable `buildFeatures { buildConfig = true }`. Review the file before syncing.
+- [x] **0.4 Dependencies.** In `libs.versions.toml`, add everything from §4.3: Compose, Navigation 3 (`navigation3-runtime`, `navigation3-ui`), Lifecycle (`lifecycle-viewmodel-compose`, `lifecycle-runtime-compose`, `lifecycle-viewmodel-navigation3`, `lifecycle-process`), Hilt (plus `hilt-lifecycle-viewmodel-compose`, `hilt-work` and the AndroidX Hilt compiler), Room, DataStore, WorkManager, Retrofit with its kotlinx.serialization converter, OkHttp with logging, the markdown renderer, and the test libraries. Add the plugins: KSP, Hilt, Room and kotlinx.serialization. Set `minSdk = 26`. Enable `buildFeatures { buildConfig = true }`. Review the file before syncing.
 - [x] **0.5 Skeleton.** Create the packages from §5.2. Add `SyncNotesApp` with `@HiltAndroidApp` (registered in the manifest) and mark `MainActivity` with `@AndroidEntryPoint`. Set `android:allowBackup="false"`.
 - [ ] **0.6 GitHub and CI.** Create the GitHub repository, push, and add `.github/workflows/android.yml` (§14.5). Run `git update-index --chmod=+x gradlew` so the Linux runner can execute it.
 - [ ] **0.7 Read-through.** Read §7 and §9 end to end. Write any questions in `TODO.md`.
