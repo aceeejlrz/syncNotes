@@ -102,10 +102,14 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.okhttp.mockwebserver)
-    // JVM-runnable Android tests (Room DAO/repository via Robolectric, so they run in CI)
+    // JVM-runnable Android tests (Room DAO/repository + UI smoke via Robolectric, so they run in CI)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.hilt.android.testing)
+    kspTest(libs.hilt.compiler)
 
     // Instrumented tests
     androidTestImplementation(platform(libs.androidx.compose.bom))
