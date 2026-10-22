@@ -25,7 +25,9 @@ okhttp = "5.5.0"
 kotlinxSerialization = "1.11.0"
 coroutines = "1.11.0"
 turbine = "1.2.1"
-markdown = "0.45.0"
+# Newest renderer whose kotlin-stdlib (2.3.21) metadata the Kotlin 2.2.10 compiler can read;
+# 0.42+ require Kotlin 2.4. Revisit when the project moves off Kotlin 2.2.
+markdown = "0.41.0"
 robolectric = "4.17"
 androidxTestCore = "1.7.0"
 

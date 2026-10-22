@@ -92,10 +92,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
-    // Markdown preview — deferred to Phase 1 (editor). The 0.45.0 renderer pulls
-    // kotlin-stdlib 2.4.10, which the Kotlin 2.2.10 compiler can't read. Revisit
-    // when wiring the editor: bump Kotlin, or pick a 2.2-compatible renderer version.
-    // implementation(libs.markdown.renderer.m3)
+    // Markdown preview (editor). Pinned to 0.41.0 (see libs.versions.toml) — the newest
+    // renderer whose kotlin-stdlib metadata the Kotlin 2.2.10 compiler can still read.
+    implementation(libs.markdown.renderer.m3)
 
     // Unit tests
     testImplementation(libs.junit)
