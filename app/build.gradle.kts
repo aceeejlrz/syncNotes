@@ -132,4 +132,7 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
         "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
         "--enable-native-access=ALL-UNNAMED",
     )
+    // Fork a fresh JVM per test class: Robolectric + Compose keep process-global state
+    // (Main dispatcher, snapshot/recomposer) that otherwise leaks between UI test classes.
+    setForkEvery(1)
 }
