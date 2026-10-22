@@ -67,13 +67,21 @@ class NoteEditorViewModel @AssistedInject constructor(
     fun onTogglePin() {
         val next = !pinned
         pinned = next
-        viewModelScope.launch { notes.setPinned(noteId, next) }
+        viewModelScope.launch {
+            // Flush first so a brand-new note's row exists (with current text) before we pin it,
+            // otherwise setPinned is a no-op and the editor/list disagree on the pin state.
+            notes.saveNote(noteId, title.text.toString(), body.text.toString())
+            notes.setPinned(noteId, next)
+        }
     }
 
     fun onToggleTrash() {
         val next = !trashed
         trashed = next
         viewModelScope.launch {
+            // Flush pending text first (R4: never lose text). For a new note this also creates
+            // the row, so moveToTrash isn't a no-op and the text lands in Trash rather than vanishing.
+            notes.saveNote(noteId, title.text.toString(), body.text.toString())
             if (next) notes.moveToTrash(noteId) else notes.restore(noteId)
         }
     }
