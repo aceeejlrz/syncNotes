@@ -11,6 +11,9 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.jezrel.syncnotes.ui.editor.NoteEditorScreen
+import com.jezrel.syncnotes.ui.editor.NoteEditorViewModel
 import com.jezrel.syncnotes.ui.noteslist.NotesListScreen
 import java.util.UUID
 
@@ -41,7 +44,12 @@ fun SyncNotesNavDisplay() {
                     onOpenSettings = { backStack.add(Settings) },
                 )
             }
-            entry<NoteEditor> { key -> Placeholder("Editor: ${key.noteId}") }
+            entry<NoteEditor> { key ->
+                val vm = hiltViewModel<NoteEditorViewModel, NoteEditorViewModel.Factory>(
+                    creationCallback = { factory -> factory.create(key) },
+                )
+                NoteEditorScreen(viewModel = vm, onBack = { backStack.removeLastOrNull() })
+            }
             entry<Trash> { Placeholder("Trash") }
             entry<Settings> { Placeholder("Settings") }
             entry<SignIn> { Placeholder("Sign in") }
