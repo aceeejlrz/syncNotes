@@ -1,6 +1,6 @@
 # SyncNotes: Architecture Blueprint
 
-> **Document version:** 1.3 · **Created:** 2026-09-28 · **Updated:** 2026-10-05 · **Status:** Active, Phase 1 in progress
+> **Document version:** 1.4 · **Created:** 2026-09-28 · **Updated:** 2026-10-21 · **Status:** Active, Phase 1 in progress
 >
 > **What this is:** the single source of truth for how SyncNotes v1 is designed and built, from an empty Android Studio project to a finished, portfolio-ready app with a backend.
 >
@@ -43,7 +43,7 @@ Update this table at the end of each phase.
 | Phase | Target dates | Status | Git tag |
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
-| 1. Offline notes app | Oct 5 – Oct 18 | In progress (through 1.5: data layer + list UI) | `v0.1-offline` |
+| 1. Offline notes app | Oct 5 – Oct 18 | In progress (through 1.6: + editor) | `v0.1-offline` |
 | 2. Backend | Oct 19 – Nov 1 | Not started | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
@@ -1818,7 +1818,7 @@ gantt
 - [x] **1.3 Repository tests** (in-memory Room): lazy creation, only changed fields become dirty, search escaping, ordering.
 - [x] **1.4 Navigation.** Keys and `SyncNotesNavDisplay` (§6.3).
 - [x] **1.5 Notes list.** Search box, pinned first, new-note button, empty state, menu.
-- [ ] **1.6 Editor.** `TextFieldState`, autosave with flush on close (§6.5), edit/preview toggle with the markdown renderer, pin and trash actions, character limits.
+- [x] **1.6 Editor.** `TextFieldState`, autosave with flush on close (§6.5), edit/preview toggle with the markdown renderer, pin and trash actions, character limits.
 - [ ] **1.7 Trash.** List and restore. Trashed notes are read-only.
 - [ ] **1.8 Look and feel.** Theme, dark mode, content descriptions, 48 dp touch targets.
 - [ ] **1.9 ViewModel tests** with fake repositories and Turbine.

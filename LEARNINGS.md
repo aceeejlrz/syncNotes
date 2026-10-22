@@ -9,6 +9,29 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 1 — Offline notes app
 
+### Markdown renderer: newest compile-compatible is 0.41.0
+`multiplatform-markdown-renderer` tracks Kotlin closely: 0.42+ pull kotlin-stdlib 2.4.x
+(metadata the 2.2.10 compiler rejects), 0.41.0 pulls 2.3.21 (metadata 2.3.0, at the readable
+boundary). Picked 0.41.0 — newest that compiles, so closest to the Compose 1.10 runtime. The
+compile check isn't enough: a `createComposeRule` test renders `Markdown("# hi")` to catch a
+runtime `NoSuchMethodError`. Use `assertExists`, not `assertIsDisplayed`, for headless renders.
+
+### Assisted-inject ViewModels via Navigation 3
+The editor VM takes its `NoteEditor` key through Hilt assisted injection:
+`@HiltViewModel(assistedFactory = Factory::class)` + `@AssistedInject` + `@AssistedFactory`,
+resolved in the nav entry with `hiltViewModel<VM, VMF>(creationCallback = { it.create(key) })`
+from `androidx.hilt.lifecycle.viewmodel.compose`. Capture the `@Assisted` param into plain
+`private val`s instead of annotating a `val` parameter, or K2 warns the annotation will later
+apply to the property too.
+
+### Testing autosave (snapshotFlow + Room) under runTest
+To assert the 400 ms debounce persists: `Dispatchers.setMain(StandardTestDispatcher)`, bind
+Room's query AND transaction executors to that dispatcher (plus `allowMainThreadQueries`, since
+the test dispatcher runs on Robolectric's main thread) so `advanceUntilIdle` awaits the DB write,
+then edit the `TextFieldState`, call `Snapshot.sendApplyNotifications()` so `snapshotFlow` emits,
+and `advanceTimeBy(401)`. Without binding Room's executors the write runs on a real background
+thread that virtual time never awaits, and the assertion sees null.
+
 ### Robolectric 4.17 runs on JDK 25 — with one JVM flag
 Room DAO/repository tests must run on the JVM (CI has no emulator; the CI task is
 `testDebugUnitTest`), so they use Robolectric. On JDK 25 the first run failed:
