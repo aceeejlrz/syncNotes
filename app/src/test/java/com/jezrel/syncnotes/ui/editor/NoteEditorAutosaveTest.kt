@@ -89,6 +89,32 @@ class NoteEditorAutosaveTest {
         }
     }
 
+    /** Pinning a brand-new note before any text must survive the first autosave. */
+    @Test
+    fun pinningBeforeTyping_persistsPinOnFirstSave() = runTest {
+        val (db, repo) = setUpRepo()
+        try {
+            val id = UUID.randomUUID().toString()
+            val vm = NoteEditorViewModel(NoteEditor(id, isNew = true), repo, backgroundScope)
+            advanceUntilIdle()
+
+            vm.onTogglePin()   // pinned before any text exists (no row yet)
+            advanceUntilIdle()
+
+            vm.title.setTextAndPlaceCursorAtEnd("Later")
+            Snapshot.sendApplyNotifications()
+            advanceTimeBy(401)
+            advanceUntilIdle()
+
+            val saved = repo.getNote(id)
+            assertTrue("pin should persist to the created row", saved?.pinned == true)
+            assertEquals("Later", saved?.title)
+        } finally {
+            db.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     /** Builds an in-memory Room DB whose executors run on the test dispatcher (set as Main). */
     private fun TestScope.setUpRepo(): Pair<SyncNotesDatabase, NotesRepository> {
         val dispatcher = StandardTestDispatcher(testScheduler)

@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 class NoteEditorViewModel @AssistedInject constructor(
     @Assisted key: NoteEditor,
     private val notes: NotesRepository,
-    @ApplicationScope private val appScope: CoroutineScope,
+    @param:ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     @AssistedFactory
@@ -60,7 +60,14 @@ class NoteEditorViewModel @AssistedInject constructor(
             snapshotFlow { title.text.toString() to body.text.toString() }
                 .drop(1)                 // skip the values we just loaded
                 .debounce(400)
-                .collectLatest { (t, b) -> if (!trashed) notes.saveNote(noteId, t, b) }
+                .collectLatest { (t, b) ->
+                    if (!trashed) {
+                        notes.saveNote(noteId, t, b)
+                        // Re-apply a pin set before the row existed (new note pinned before typing);
+                        // no-op once the row is already pinned.
+                        if (pinned) notes.setPinned(noteId, true)
+                    }
+                }
         }
     }
 
