@@ -120,6 +120,16 @@ class NotesRepositoryTest {
         assertEquals(listOf("p"), hits) // "%" matched literally, not as a wildcard
     }
 
+    @Test
+    fun observeTrash_showsOnlyTrashedNotes_andRestoreClearsThem() = runTest {
+        upsertSynced("keep", title = "Keep", updatedAt = 100, pinned = false)
+        upsertSynced("gone", title = "Gone", updatedAt = 200, pinned = false)
+        repo.moveToTrash("gone")
+        assertEquals(listOf("gone"), repo.observeTrash().first().map { it.id })
+        repo.restore("gone")
+        assertTrue(repo.observeTrash().first().isEmpty())
+    }
+
     private suspend fun upsertSynced(
         id: String,
         title: String,
