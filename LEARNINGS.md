@@ -9,6 +9,19 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 1 — Offline notes app
 
+### `advanceUntilIdle()` ignores work left only in `backgroundScope`
+To test the editor's flush-on-close, the VM gets `backgroundScope` as its app scope and lives in
+a real `ViewModelStore`; `store.clear()` runs `onCleared` exactly as a nav pop does. The flush
+then never ran: `advanceUntilIdle()` stops when only background tasks remain. Follow it with
+`runCurrent()`. That also turned a "nothing was saved" assertion from vacuous into real — a quick
+mutation (deleting the trashed guard) confirmed the test now fails when it should.
+
+### ViewModel tests need a repository interface, and a deliberately dumb fake
+`NotesRepository` became an interface (`RoomNotesRepository` is bound via `@Binds`) so VM tests
+can use `FakeNotesRepository`. The fake records calls and filters only on `trashed`; it doesn't
+copy ordering, escaping or dirty bits, which are tested against real Room. List and trash VM
+tests run on the plain JVM; the editor needs Robolectric for `TextFieldState`.
+
 ### Material 3 icon buttons are 40 dp drawn, 48 dp touchable
 `assertWidthIsAtLeast(48.dp)` on an `IconButton` fails at 40 dp: M3 draws the button smaller
 and extends the *touch* area to 48 dp via `minimumInteractiveComponentSize`. The guideline is
