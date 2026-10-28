@@ -1,0 +1,12 @@
+# Local PostgreSQL for development. With Docker Compose Support, `./mvnw spring-boot:run` starts
+# it automatically (Docker Desktop must be running). Pin the major version to match the Neon
+# project created in step 2.10.
+services:
+  postgres:
+    image: 'postgres:17'
+    environment:
+      - 'POSTGRES_DB=syncnotes'
+      - 'POSTGRES_USER=syncnotes'
+      - 'POSTGRES_PASSWORD=syncnotes'   # local only; production uses Fly.io secrets (2.10)
+    ports:
+      - '5432'

@@ -1,0 +1,6 @@
+# Local development profile: ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+syncnotes:
+  auth:
+    # Short-lived access tokens to exercise the silent refresh (conflict matrix C11).
+    # Bound to configuration properties in step 2.7 (auth).
+    access-token-ttl: 1m

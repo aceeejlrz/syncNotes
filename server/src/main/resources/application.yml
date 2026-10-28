@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: SyncNotes
+  flyway:
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health        # /actuator/health for the Fly.io health check (14.4)
