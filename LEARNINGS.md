@@ -7,6 +7,29 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ---
 
+## Phase 2 — Backend
+
+### Golden vectors keep the Java merge engine and the model in lockstep
+`docs/sync_protocol_model.py --export-vectors` dumps 1,017 real merge inputs/outputs (random runs
+plus hand-picked edge cases, expected outputs always from the model) to
+`server/src/test/resources/merge-vectors.json`; `MergeEngineVectorTest` replays them all. Planting
+the "no last-writer check" bug in Java fails 90 of them, so the test has teeth. `--check-vectors`
+catches a model change that wasn't re-exported. Gotcha: the first export wasn't reproducible —
+field order inside `sent` came from iterating a Python set (hash-randomized per process); sorted
+keys fixed it.
+
+### A conflicted copy's title can overflow the column
+M4 appends `" (conflicted copy from <device>)"` (up to ~84 characters) to a title that may already
+be 300. The insert would violate `notes_title_len`, roll back the whole push, and the app would
+retry it forever. The copy's title is now shortened by whole code points (PostgreSQL's
+`char_length` counts code points, Java's `String.length` counts UTF-16 units) — in the engine,
+the model and §9.4. The randomized model never checked lengths, so it couldn't have found this.
+
+### Spring Boot 4.1 generates Jackson 3, and Flyway needs its PostgreSQL module
+Initializr's Boot 4.1.2 project uses Jackson 3 (`tools.jackson.databind`, `asString()` instead of
+`asText()`) and already adds `flyway-database-postgresql`, which recent Flyway versions need
+separately. Built with JDK 25 against `<java.version>21</java.version>` (`--release 21`).
+
 ## Before Phase 2 — sync protocol model
 
 ### The executable model found two holes the design review missed

@@ -3,6 +3,13 @@
 Scratch space for the next change and open questions
 (see [`ARCHITECTURE.md` §1.2](ARCHITECTURE.md#12-routine-for-every-work-session)).
 
+## Now (Phase 2)
+
+- [ ] **Start Docker Desktop** (the CLI is installed, the daemon isn't running). Needed to verify
+  2.2 (compose PostgreSQL) and 2.3 (Flyway runs `V1__init.sql`) via the generated `contextLoads`
+  test, and for every Testcontainers step after (2.5, 2.8). Until then only the pure merge-engine
+  tests run: `cd server && ./mvnw test -Dtest='MergeEngine*'` (JAVA_HOME = JDK 25).
+
 ## Now (Phase 0)
 
 - [ ] Confirm the app builds **and runs on a device/emulator** with Hilt (exit criterion).
