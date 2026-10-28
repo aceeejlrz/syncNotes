@@ -17,6 +17,10 @@ the base after a push) silently overwrites another device's text when a field wa
 the push, and rule B (partial take on a dirty pull) creates false conflicts. Shrinking each
 failure to about 20–30 operations made the cause readable. Lesson: hand-traced examples check
 the paths you thought of; randomized interleavings find the ones you didn't.
+Fixed with per-field base versions (ADR-018): each field remembers the version it was last seen
+at, so a field edited during a push keeps its old base (a real conflict stays detectable), and a
+freshly received field moves its base up (no false conflict). Cheap to change now because
+neither the server (Phase 2) nor the sync engine (Phase 4) exists yet.
 
 ### Prove the harness can fail before trusting it
 A green randomized run means nothing unless the checks can fire. The model's self-check removes

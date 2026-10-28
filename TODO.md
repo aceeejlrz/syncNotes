@@ -37,9 +37,8 @@ rules, worked examples, the editor race). Questions so far:
 - **§9.4 M4 conflicted copy.** The copy's title is `"<title> (conflicted copy from <device>)"`.
   What happens on a *second* conflict for the same note — does it stack another suffix?
   Decide before Phase 4.
-- **§9 sync model — DECIDE A FIX.** `docs/sync_protocol_model.py` is built and found two holes
-  in the §9.7 app rules (lost text, false conflicts; 141/1,000 runs fail). Choose Fix A
-  (snapshot, no protocol change) or Fix B (per-field bases, protocol change) — see §9.12 —
-  then update §7.1/§8/§9.7 to match and make the model's default rules pass, before Phase 2.
+- [x] **§9 sync model.** Built; it found two holes in the v1.4 rules (lost text, false conflicts).
+  Fix B adopted: per-field base versions (ADR-018); the blueprint was updated and the model passes.
+  Phase 4 adds the base columns to the app (schema v2, step 4.1).
 - [ ] Decide the Fly.io app name (currently the `syncnotes-api` placeholder in the doc).
 - [ ] License for the repo (README says TBD).

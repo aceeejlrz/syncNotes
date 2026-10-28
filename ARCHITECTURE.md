@@ -1,6 +1,6 @@
 # SyncNotes: Architecture Blueprint
 
-> **Document version:** 1.4 · **Created:** 2026-09-28 · **Updated:** 2026-10-21 · **Status:** Active, Phase 1 in progress
+> **Document version:** 1.5 · **Created:** 2026-09-28 · **Updated:** 2026-10-27 · **Status:** Active, Phase 1 in progress
 >
 > **What this is:** the single source of truth for how SyncNotes v1 is designed and built, from an empty Android Studio project to a finished, portfolio-ready app with a backend.
 >
@@ -530,9 +530,14 @@ data class NoteEntity(
     val trashed: Boolean,
     @ColumnInfo(name = "created_at") val createdAt: Long,         // epoch ms, display only
     @ColumnInfo(name = "updated_at") val updatedAt: Long,         // epoch ms, display and sorting only
-    @ColumnInfo(name = "server_version") val serverVersion: Long, // the "base version"; 0 = never synced
+    @ColumnInfo(name = "server_version") val serverVersion: Long, // latest note version seen; 0 = never synced
     @ColumnInfo(name = "dirty_fields") val dirtyFields: Int,      // bitmask, see DirtyField
     @ColumnInfo(name = "sync_error") val syncError: String?,      // set when the server rejected this note
+    // Per-field base versions (ADR-018): the server version of each field this device last saw.
+    @ColumnInfo(name = "title_base") val titleBase: Long = 0,
+    @ColumnInfo(name = "body_base") val bodyBase: Long = 0,
+    @ColumnInfo(name = "pinned_base") val pinnedBase: Long = 0,
+    @ColumnInfo(name = "trashed_base") val trashedBase: Long = 0,
 )
 
 object DirtyField {
@@ -555,11 +560,14 @@ data class SyncStateEntity(
 )
 ```
 
+> The four `*_base` columns arrive with the sync engine in Phase 4 as **schema v2** (an auto-migration from v1, defaulting to 0, plus a migration test). Phase 1 shipped schema v1 without them, and nothing reads them until then.
+
 ### 7.2 Why these columns exist
 
 | Column | Purpose |
 |---|---|
-| `server_version` | The **base version**: the note's server version the last time this device fully knew it. Sent with every push so the server can tell whether someone else changed the note since. |
+| `title_base`, `body_base`, `pinned_base`, `trashed_base` | The **base versions**: for each field, the server version of that field this device last saw. All four are sent with every push, so the server can tell, field by field, whether another device changed it since ([§9.4](#94-merge-rules-the-contract), ADR-018). |
+| `server_version` | The latest version of the whole note this device has seen. Used only to skip stale pull pages; conflict detection uses the per-field bases. |
 | `dirty_fields` | Which fields changed on this device and haven't been confirmed by the server. Only those fields are pushed, which is what makes per-field merging possible. |
 | `sync_error` | A note the server rejected (for example, too long) isn't retried forever. Editing the note clears the error. |
 | `sync_state.cursor` | Where the next pull starts. Saved in the same transaction as the pulled notes. |
@@ -574,7 +582,7 @@ Dirty bits:
 | 4 | pinned | The user pins or unpins | Same, for pinned |
 | 8 | trashed | The user trashes or restores | Same, for trashed |
 
-A brand-new note has all four bits set and `server_version = 0`.
+A brand-new note has all four bits set, `server_version = 0` and every base 0.
 
 ### 7.3 DAOs
 
@@ -856,7 +864,7 @@ Design notes:
 }
 ```
 
-**Push** (`POST /api/v1/sync/push`). Each change carries only the fields that are dirty on the device. A missing field means "not changed".
+**Push** (`POST /api/v1/sync/push`). Each change carries only the fields that are dirty on the device. A missing field means "not changed". `baseVersions` always carries all four fields: the version of each field the device last saw.
 
 ```json
 {
@@ -865,13 +873,13 @@ Design notes:
   "changes": [
     {
       "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-      "baseVersion": 41,
+      "baseVersions": { "title": 41, "body": 38, "pinned": 40, "trashed": 12 },
       "createdAt": "2026-10-05T14:03:11Z",
       "body": "- eggs\n- rice\n- milk"
     },
     {
       "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-      "baseVersion": 0,
+      "baseVersions": { "title": 0, "body": 0, "pinned": 0, "trashed": 0 },
       "createdAt": "2026-10-06T09:12:40Z",
       "title": "Trip ideas",
       "body": "",
@@ -896,6 +904,7 @@ Design notes:
         "trashed": false,
         "createdAt": "2026-10-05T14:03:11Z",
         "updatedAt": "2026-10-07T18:22:05Z",
+        "fieldVersions": { "title": 41, "body": 57, "pinned": 44, "trashed": 12 },
         "version": 57
       }
     },
@@ -910,6 +919,7 @@ Design notes:
         "trashed": false,
         "createdAt": "2026-10-06T09:12:40Z",
         "updatedAt": "2026-10-07T18:22:05Z",
+        "fieldVersions": { "title": 58, "body": 58, "pinned": 58, "trashed": 58 },
         "version": 58
       }
     }
@@ -939,6 +949,7 @@ Result statuses:
       "trashed": false,
       "createdAt": "2026-10-05T14:03:11Z",
       "updatedAt": "2026-10-07T18:22:05Z",
+      "fieldVersions": { "title": 41, "body": 57, "pinned": 44, "trashed": 12 },
       "version": 57
     }
   ],
@@ -967,7 +978,7 @@ Codes: `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `TOKEN_INVALID`, `VALIDATION_FAILED
 |---|---|---|
 | Changes per push | 1 to 50, no duplicate ids | 400 for the whole request |
 | `id`, `deviceId` | Valid UUIDs | 400 |
-| `baseVersion` | 0 or more | 400 |
+| `baseVersions` | All four fields present, each 0 or more | 400 |
 | `title` | Up to 300 characters | `REJECTED` for that note |
 | `body` | Up to 100,000 characters | `REJECTED` for that note |
 | `deviceName` | Up to 60 characters | Truncated |
@@ -981,9 +992,11 @@ The app pushes in batches of 25 notes, which keeps requests well under a few meg
 ```kotlin
 @Serializable data class PushRequest(val deviceId: String, val deviceName: String, val changes: List<ChangeDto>)
 
+@Serializable data class FieldVersions(val title: Long, val body: Long, val pinned: Long, val trashed: Long)
+
 @Serializable data class ChangeDto(
     val id: String,
-    val baseVersion: Long,
+    val baseVersions: FieldVersions,   // all four, always sent (ADR-018)
     val createdAt: String,
     val title: String? = null,     // null = not changed (omitted from JSON)
     val body: String? = null,
@@ -998,7 +1011,8 @@ The app pushes in batches of 25 notes, which keeps requests well under a few meg
 
 @Serializable data class NoteDto(
     val id: String, val title: String, val body: String, val pinned: Boolean, val trashed: Boolean,
-    val createdAt: String, val updatedAt: String, val version: Long,
+    val createdAt: String, val updatedAt: String,
+    val fieldVersions: FieldVersions, val version: Long,
 )
 
 @Serializable data class PullResponse(val notes: List<NoteDto>, val nextCursor: Long, val hasMore: Boolean)
@@ -1013,7 +1027,7 @@ val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
 fun NoteEntity.toChangeDto() = ChangeDto(
     id = id,
-    baseVersion = serverVersion,
+    baseVersions = FieldVersions(titleBase, bodyBase, pinnedBase, trashedBase),
     createdAt = Instant.ofEpochMilli(createdAt).toString(),
     title = title.takeIf { dirtyFields.has(DirtyField.TITLE) },
     body = body.takeIf { dirtyFields.has(DirtyField.BODY) },
@@ -1022,7 +1036,7 @@ fun NoteEntity.toChangeDto() = ChangeDto(
 )
 ```
 
-On the server, the same shapes are Java records (for example `record ChangeDto(UUID id, long baseVersion, Instant createdAt, String title, String body, Boolean pinned, Boolean trashed)`), where `null` means "not sent".
+On the server, the same shapes are Java records (for example `record ChangeDto(UUID id, FieldVersions baseVersions, Instant createdAt, String title, String body, Boolean pinned, Boolean trashed)`), where `null` means "not sent".
 
 ---
 
@@ -1032,7 +1046,7 @@ This is the heart of the project. Read it fully before Phase 2.
 
 The rules in §9.4 and §9.7 have an executable model in `docs/sync_protocol_model.py` (Python, no dependencies). It replays the worked examples, then runs randomized tests with several devices, lost requests and responses, stale pull pages, and edits made while a push is in flight, and checks four invariants: every device converges to the server, no typed text is lost, no conflicted copy is created against text the pushing device already had, and the system settles. A self-check first confirms the harness catches deliberately broken rules. If you change a rule, change the model and re-run it.
 
-> **Status (2026-10-27): the rules as written fail, and a fix is pending.** The three worked examples pass, but 141 of 1,000 randomized runs (300 operations each) break an invariant: 85 lose text and 56 create false conflicts. The cause is two holes in §9.7, and two candidate fixes pass every check. See [§9.12](#912-model-findings-open-decision).
+> **Status (2026-10-27): passing.** With the rules below, 1,000 randomized runs of 300 operations pass every invariant, as do 13,000 harder runs (up to 5 devices × 1,000 operations), and the three worked examples replay exactly. The first version of these rules (document v1.4, one base version per note) failed 141 of 1,000 runs. The model found two holes, and per-field base versions fixed them ([§9.12](#912-model-findings), ADR-018).
 
 ### 9.1 Vocabulary
 
@@ -1041,7 +1055,7 @@ The rules in §9.4 and §9.7 have an executable model in `docs/sync_protocol_mod
 | Change counter | `users.sync_version`. Goes up by one for every note row written for that user. |
 | Server version | `notes.server_version`: the counter value when that note row last changed. Unique per user. |
 | Field version, field device | For each field: the counter value of its last write, and the device that made it. |
-| Base version | `NoteEntity.serverVersion` on the phone: the note's server version the last time this device fully knew it. |
+| Base version | Per field, on the phone (`NoteEntity.titleBase` … `trashedBase`): the version of that field this device last saw. Sent for all four fields with every change. (`NoteEntity.serverVersion` is the note-level version, used only to skip stale pulls.) |
 | Dirty fields | Fields changed on this device and not yet confirmed by the server. |
 | Cursor | The highest server version this device has pulled. Stored in `sync_state`. |
 | Device id | A random UUID generated once per app install. |
@@ -1102,10 +1116,10 @@ Pushes for the same account now run one at a time, so their numbers become visib
 
 ### 9.4 Merge rules (the contract)
 
-For a change from device **D** with base version **B**, and a field **f** that the device sent:
+For a change from device **D**, with base versions **B_f** (one per field), and a field **f**:
 
 - **differs(f)**: the sent value is different from the server's current value.
-- **concurrent(f)**: the field's version on the server is greater than B **and** the field's last writer is not D. In words: another device changed this field after this device last saw the note.
+- **concurrent(f)**: the field's version on the server is greater than B_f **and** the field's last writer is not D. In words: another device changed this field after this device last saw *that field*.
 
 | # | Situation | Result |
 |---|---|---|
@@ -1116,9 +1130,9 @@ For a change from device **D** with base version **B**, and a field **f** that t
 | M5 | Pinned differs, not concurrent | Apply it |
 | M6 | Pinned differs and is concurrent | The server keeps its value (first write wins, no copy) |
 | M7 | Restore (trashed changes to false) | Always apply. Restoring can't lose anything |
-| M8 | Trash (trashed changes to true), and another device changed the title, body or trashed state after B | Ignore the trash. **Edits beat deletes** |
+| M8 | Trash (trashed changes to true), and the title, body or trashed state is concurrent | Ignore the trash. **Edits beat deletes** |
 | M9 | Trash in any other case | Apply it |
-| M10 | A title or body change is applied (M3) while the note is trashed on the server by another device after B | Also restore the note. **Edits beat deletes** |
+| M10 | A title or body change is applied (M3) while the note is trashed on the server and trashed is concurrent | Also restore the note. **Edits beat deletes** |
 
 Status: `CONFLICT_COPY` if M4 happened, otherwise `APPLIED` if anything changed, otherwise `NOOP`.
 
@@ -1131,8 +1145,7 @@ merge(current, change, D, deviceName):
     if current is null:
         return created(noteFrom(change, D))                                   # M1
 
-    B = change.baseVersion
-    concurrent(f) = current.version[f] > B and current.device[f] != D
+    concurrent(f) = current.version[f] > change.baseVersions[f] and current.device[f] != D
     differs(f)    = change.has(f) and change.value[f] != current.value[f]
     next = copy of current
     copy = null
@@ -1168,18 +1181,18 @@ The same rules as a picture (M10 left out for readability):
 
 ```mermaid
 flowchart TD
-    A["Change for note N from device D with base version B"] --> B1{"N exists on the server?"}
+    A["Change for note N from device D with per-field bases B_f"] --> B1{"N exists on the server?"}
     B1 -- "no" --> C["Create N from the sent fields"]
-    B1 -- "yes" --> D1{"Title or body differs AND another device changed that field after B?"}
+    B1 -- "yes" --> D1{"Title or body differs AND another device changed that field after B_f?"}
     D1 -- "yes, true conflict" --> E["Keep server title and body. Create a conflicted copy with the incoming text"]
     D1 -- "no" --> F["Apply the differing title and body"]
-    E --> G{"Pinned differs and not changed by another device after B?"}
+    E --> G{"Pinned differs and not changed by another device after B_f?"}
     F --> G
     G -- "yes" --> H["Apply pinned"]
     G -- "no" --> I{"Trashed differs?"}
     H --> I
     I -- "restore" --> J["Apply restore"]
-    I -- "trash" --> K{"Another device changed title, body or trashed after B?"}
+    I -- "trash" --> K{"Another device changed title, body or trashed after its B_f?"}
     K -- "yes" --> L["Ignore the trash: edits beat deletes"]
     K -- "no" --> M["Apply trash"]
     I -- "no" --> N["Stamp a new change number on changed fields and save"]
@@ -1279,11 +1292,13 @@ for each field f:
     if local[f] == sent[f]: clear bit f in dirty        # confirmed and not edited again since
 if status == CONFLICT_COPY and (TITLE or BODY is still set in dirty):
     # rare: the user kept typing while a conflicting push was in flight
-    insert a new local note (new id, local title and body, all bits dirty, base 0)
+    insert a new local note (new id, local title and body, all bits dirty, all bases 0)
     clear TITLE and BODY in dirty
 for each field f not in dirty:
     local[f] = server[f]
-local.serverVersion = server.version                     # ALWAYS advance after a push
+    local.base[f] = server.fieldVersions[f]              # we now know this field at this version
+# a field that is still dirty keeps its base (see below)
+local.serverVersion = server.version                     # stale-pull guard only
 local.dirtyFields = dirty
 local.syncError = null
 save local
@@ -1295,15 +1310,16 @@ save local
 
 ```text
 local = dao.get(note.id)
-if local is null:                        insert note as clean (dirty = 0)
+if local is null:                             insert note as clean (bases = note.fieldVersions)
 else if note.version <= local.serverVersion:  skip           # already have this or newer
-else if local.dirtyFields == 0:          replace local with note
-else:                                    # local has unsynced edits
-    take the server value only for fields that are NOT dirty
-    keep local.serverVersion unchanged   # so the next push still detects a real conflict
+else:
+    for each field f NOT dirty:
+        local[f] = note[f]; local.base[f] = note.fieldVersions[f]
+    # a dirty field keeps its local value and its base
+    local.serverVersion = note.version
 ```
 
-Why the base version stays put in the last case: if another device changed the same field this device is editing, advancing the base would hide that fact from the server, and the other device's text would be overwritten silently. Keeping the old base lets rule M4 catch it.
+Why bases are per field, and why a dirty field keeps its base: a dirty field was edited from the value the device saw at `base[f]`. If another device changed that field since, the next push must still look concurrent, so rule M4 makes a conflicted copy instead of silently overwriting the other device's text. A clean field the device just received *has* been seen, so its base moves up, and a later edit to it is correctly a continuation, not a conflict. The first version of this document (v1.4) used one base per note and got both cases wrong (§9.12).
 
 ### 9.8 Worked examples
 
@@ -1528,9 +1544,9 @@ class SyncEngine @Inject constructor(
 5. One account per device at a time.
 6. Sync isn't real-time: about 2 seconds after an edit when online, and up to 15 minutes in the background.
 
-### 9.12 Model findings (open decision)
+### 9.12 Model findings
 
-Found by `docs/sync_protocol_model.py` on 2026-10-27. Both holes are in the app-side rules (§9.7); the server rules (§9.4) and the worked examples are fine.
+Found by `docs/sync_protocol_model.py` on 2026-10-27, against document v1.4 of §9.7, which used one base version per note. Both holes were in the app-side rules; the server rules (§9.4) and the worked examples were fine. **Resolved:** Fix B was adopted (ADR-018), and §7.1, §8.3–8.5, §9.1, §9.4 and §9.7 now specify it.
 
 **Hole 1: rule A loses text.** "Always advance the base after a push" is unsafe when a field is still dirty because it was edited while the push was in flight. If another device changed that field after the old base, advancing hides that change, and the next push overwrites it silently. Shrunk trace: D1 builds a push for a note (pinned only), the user edits the title while it's in flight, D3 changes the same title (v3), D1's response advances the base to v4, and D1's next title push is no longer concurrent, so D3's text is gone.
 
@@ -1538,9 +1554,9 @@ Found by `docs/sync_protocol_model.py` on 2026-10-27. Both holes are in the app-
 
 | Rules | Failed runs (1,000 × 300, 3 devices) | Lost text | False conflicts | Conflicted copies |
 |---|---|---|---|---|
-| §9.7 as written (`--rules doc`) | 141 | 85 | 56 | 6,233 |
+| v1.4 rules (`--rules v1.4`) | 141 | 85 | 56 | 6,233 |
 | Fix A: consistent snapshot (`--rules snapshot`) | 0 | 0 | 0 | 6,441 |
-| Fix B: per-field base versions (`--rules fieldbase`) | 0 | 0 | 0 | 6,352 |
+| **Fix B: per-field base versions (`--rules contract`, adopted)** | 0 | 0 | 0 | 6,352 |
 
 Both fixes also passed 18,000 more runs each, including 5 devices × 1,000 operations, and still replay Examples 1–3 exactly.
 
@@ -1553,7 +1569,7 @@ Both fixes also passed 18,000 more runs each, including 5 devices × 1,000 opera
   - Changes to §7.1, §8.3 and §8.5 to match.
   - No visibility delay, and fewer copies.
 
-Nothing that depends on this is built yet (server: Phase 2, sync engine: Phase 4), so either fix costs only documentation now. Until one is chosen, `python docs/sync_protocol_model.py` exits non-zero, because it runs the contract as written.
+Fix B was chosen because nothing that depends on it is built yet (server: Phase 2, sync engine: Phase 4), so the protocol change cost only documentation, while Fix A's visibility delay and its `REJECTED` behavior would have been permanent. `python docs/sync_protocol_model.py` runs the adopted rules by default and exits 0. `--rules v1.4` reproduces both holes, and `--rules snapshot` runs Fix A.
 
 ---
 
@@ -1772,7 +1788,7 @@ Shows the device id, account id, cursor, pending count, last success, last error
 
 1. Every row of the merge rules table has at least one server unit test.
 2. All three worked examples in §9.8 are automated as server tests.
-3. `ChangeRules` has tests for: confirmed push, push with an edit in flight, conflict copy with an edit in flight (fork), pull onto a clean note, pull onto a dirty note (base kept), stale pull (skipped).
+3. `ChangeRules` has tests for: confirmed push, push with an edit in flight, conflict copy with an edit in flight (fork), pull onto a clean note, pull onto a dirty note (dirty fields keep their bases, clean fields take the server's), an edit in flight to a field another device changed meanwhile (the next push must still be concurrent), stale pull (skipped).
 
 ### 12.3 Conflict matrix
 
@@ -1899,7 +1915,7 @@ gantt
 
 *Week 1: basic push and pull*
 
-- [ ] **4.1** `SyncApi` and mappers between entities and DTOs.
+- [ ] **4.1** Schema v2: add the four per-field base columns (auto-migration from v1 and a migration test, §7.1). Then `SyncApi` and the mappers between entities and DTOs.
 - [ ] **4.2** `ChangeRules` (§9.7), written test-first as pure functions.
 - [ ] **4.3** `SyncEngine` (§9.9): mutex, push loop, pull loop with the cursor saved in the same transaction.
 - [ ] **4.4** A temporary "Sync now" button in Settings that calls the engine directly.
@@ -2131,6 +2147,9 @@ Why: less build configuration while learning. Cost: less enforced separation. Mo
 **ADR-017: Room and ViewModel tests run on the JVM via Robolectric, in `app/src/test`.**
 Why: CI runs on an emulator-less runner (and the dev machine has no emulator), and the CI command is `testDebugUnitTest`. Instrumented (`androidTest`) tests would never run there, so the doc's original `androidTest` placement for repository tests is moved to `test/`. Robolectric 4.17 runs the in-memory Room database on the JVM. Cost: on JDK 25 Robolectric needs JDK-internal access, so the unit-test JVM is launched with `--add-exports=java.base/jdk.internal.access=ALL-UNNAMED` (see LEARNINGS). True on-device checks remain the two-emulator conflict matrix (§12.3).
 
+**ADR-018: Per-field base versions.**
+Why: the executable sync model (§9.12) showed that one base version per note is unsafe. Advancing it after a push hides another device's change to a field the user edited while the push was in flight, so that change is silently overwritten. Keeping it on a partial pull makes later edits to freshly pulled fields look like conflicts. Tracking the version each field was last seen at fixes both; the model passes with no failures across 14,000 randomized runs. Cost: `NoteDto` carries four field versions, every change carries four bases, and `NoteEntity` gains four columns (schema v2, Phase 4). Alternative considered: keep one base and take a pulled or pushed note only when nothing in it is dirty. That passes too, but edited notes would stop showing other devices' changes, and a `REJECTED` note would never update until edited.
+
 *Template for new entries:*
 
 ```text
@@ -2162,11 +2181,11 @@ Cost: <what gets harder, and alternatives considered>
 | Term | Meaning |
 |---|---|
 | Local-first | The app works from its own database. The network is only used to exchange changes |
-| Base version | The server version of a note that this device last fully knew. Sent with every change |
+| Base version | Per field: the server version of that field this device last saw. All four are sent with every change |
 | Change number | The per-user counter value given to every write on the server |
 | Cursor | Where the next pull starts: the highest change number this device has pulled |
 | Dirty field | A field changed on this device that the server hasn't confirmed yet |
-| Concurrent change | A change to a field made by another device after this device's base version |
+| Concurrent change | A change to a field made by another device after this device's base version for that field |
 | Conflicted copy | A new note holding text that lost a true conflict |
 | Tombstone | A deleted item kept as a row (here, a trashed note) so the deletion can sync |
 | Idempotent | Safe to repeat: doing it twice has the same effect as doing it once |
