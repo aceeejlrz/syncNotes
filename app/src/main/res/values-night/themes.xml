@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark window theme so the window behind Compose (launch, transitions) isn't white
+         in dark mode. Colors inside the app come from SyncNotesTheme. -->
+    <style name="Theme.SyncNotes" parent="android:Theme.Material.NoActionBar" />
+</resources>

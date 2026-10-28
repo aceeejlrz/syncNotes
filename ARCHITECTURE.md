@@ -43,7 +43,7 @@ Update this table at the end of each phase.
 | Phase | Target dates | Status | Git tag |
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
-| 1. Offline notes app | Oct 5 – Oct 18 | In progress (through 1.7: + trash) | `v0.1-offline` |
+| 1. Offline notes app | Oct 5 – Oct 18 | In progress (through 1.8: + look and feel) | `v0.1-offline` |
 | 2. Backend | Oct 19 – Nov 1 | Not started | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
@@ -1820,7 +1820,7 @@ gantt
 - [x] **1.5 Notes list.** Search box, pinned first, new-note button, empty state, menu.
 - [x] **1.6 Editor.** `TextFieldState`, autosave with flush on close (§6.5), edit/preview toggle with the markdown renderer, pin and trash actions, character limits.
 - [x] **1.7 Trash.** List and restore. Trashed notes are read-only.
-- [ ] **1.8 Look and feel.** Theme, dark mode, content descriptions, 48 dp touch targets.
+- [x] **1.8 Look and feel.** Theme, dark mode, content descriptions, 48 dp touch targets.
 - [ ] **1.9 ViewModel tests** with fake repositories and Turbine.
 
 **Exit criteria:** create, edit, search, pin, trash and restore all work in airplane mode. Killing the app never loses text typed more than half a second earlier. Tests pass in CI.

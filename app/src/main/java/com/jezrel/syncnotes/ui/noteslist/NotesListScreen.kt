@@ -1,5 +1,6 @@
 package com.jezrel.syncnotes.ui.noteslist
 
+import android.content.res.Configuration
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -36,10 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jezrel.syncnotes.data.local.NoteSummary
+import com.jezrel.syncnotes.ui.components.PinToggle
+import com.jezrel.syncnotes.ui.theme.SyncNotesTheme
 
 @Composable
 fun NotesListScreen(
@@ -62,9 +65,10 @@ fun NotesListScreen(
     )
 }
 
+/** Stateless content; internal so previews and UI tests can render it without a ViewModel. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NotesListContent(
+internal fun NotesListContent(
     query: String,
     state: NotesListUiState,
     onQueryChange: (String) -> Unit,
@@ -165,6 +169,12 @@ private fun NoteRow(
     onTogglePin: () -> Unit,
 ) {
     ListItem(
+        // A visible label, so pinned state never relies on color alone.
+        overlineContent = if (note.pinned) {
+            { Text("Pinned") }
+        } else {
+            null
+        },
         headlineContent = {
             Text(
                 text = note.title.ifBlank { "Untitled" },
@@ -177,19 +187,40 @@ private fun NoteRow(
                 Text(note.preview, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         },
-        trailingContent = {
-            IconButton(onClick = onTogglePin) {
-                Icon(
-                    imageVector = Icons.Filled.Star,
-                    contentDescription = if (note.pinned) "Unpin" else "Pin",
-                    tint = if (note.pinned) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        },
-        modifier = Modifier.clickable(onClick = onClick),
+        trailingContent = { PinToggle(pinned = note.pinned, onToggle = onTogglePin) },
+        modifier = Modifier.clickable(onClickLabel = "Open note", onClick = onClick),
     )
+}
+
+private val previewNotes = listOf(
+    NoteSummary("1", "Groceries", "- eggs\n- rice\n- milk", pinned = true, updatedAt = 3, dirtyFields = 0, syncError = null),
+    NoteSummary("2", "Trip ideas", "Lisbon in spring, maybe Porto too", pinned = false, updatedAt = 2, dirtyFields = 0, syncError = null),
+    NoteSummary("3", "", "A note without a title", pinned = false, updatedAt = 1, dirtyFields = 0, syncError = null),
+)
+
+@Preview(name = "Notes list — light", showBackground = true)
+@Preview(name = "Notes list — dark", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun NotesListPreview() {
+    SyncNotesTheme(dynamicColor = false) {
+        NotesListContent(
+            query = "",
+            state = NotesListUiState(notes = previewNotes, loading = false),
+            onQueryChange = {}, onOpenNote = {}, onNewNote = {},
+            onOpenTrash = {}, onOpenSettings = {}, onTogglePin = { _, _ -> },
+        )
+    }
+}
+
+@Preview(name = "Notes list — empty, dark", showBackground = true, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun NotesListEmptyPreview() {
+    SyncNotesTheme(dynamicColor = false) {
+        NotesListContent(
+            query = "",
+            state = NotesListUiState(notes = emptyList(), loading = false),
+            onQueryChange = {}, onOpenNote = {}, onNewNote = {},
+            onOpenTrash = {}, onOpenSettings = {}, onTogglePin = { _, _ -> },
+        )
+    }
 }
