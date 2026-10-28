@@ -1030,7 +1030,9 @@ On the server, the same shapes are Java records (for example `record ChangeDto(U
 
 This is the heart of the project. Read it fully before Phase 2.
 
-The rules in §9.4 and §9.7 have an executable model in `docs/sync_protocol_model.py` (Python, no dependencies). It replays the worked examples and then runs randomized tests with three devices, lost push responses and edits made while a push is in flight. It has passed 1,000 runs of 300 operations each: every device converged to the same notes, no unsynced text was lost, and no conflicted copy was ever created for text that had already been seen. If you change a rule, change the model and re-run it.
+The rules in §9.4 and §9.7 have an executable model in `docs/sync_protocol_model.py` (Python, no dependencies). It replays the worked examples, then runs randomized tests with several devices, lost requests and responses, stale pull pages, and edits made while a push is in flight, and checks four invariants: every device converges to the server, no typed text is lost, no conflicted copy is created against text the pushing device already had, and the system settles. A self-check first confirms the harness catches deliberately broken rules. If you change a rule, change the model and re-run it.
+
+> **Status (2026-10-27): the rules as written fail, and a fix is pending.** The three worked examples pass, but 141 of 1,000 randomized runs (300 operations each) break an invariant: 85 lose text and 56 create false conflicts. The cause is two holes in §9.7, and two candidate fixes pass every check. See [§9.12](#912-model-findings-open-decision).
 
 ### 9.1 Vocabulary
 
@@ -1525,6 +1527,33 @@ class SyncEngine @Inject constructor(
 4. Pinned conflicts resolve first-write-wins without telling the user.
 5. One account per device at a time.
 6. Sync isn't real-time: about 2 seconds after an edit when online, and up to 15 minutes in the background.
+
+### 9.12 Model findings (open decision)
+
+Found by `docs/sync_protocol_model.py` on 2026-10-27. Both holes are in the app-side rules (§9.7); the server rules (§9.4) and the worked examples are fine.
+
+**Hole 1: rule A loses text.** "Always advance the base after a push" is unsafe when a field is still dirty because it was edited while the push was in flight. If another device changed that field after the old base, advancing hides that change, and the next push overwrites it silently. Shrunk trace: D1 builds a push for a note (pinned only), the user edits the title while it's in flight, D3 changes the same title (v3), D1's response advances the base to v4, and D1's next title push is no longer concurrent, so D3's text is gone.
+
+**Hole 2: rule B causes false conflicts.** When a pulled note is partly dirty locally, rule B takes the server's values for the clean fields but keeps the old base. If the user then edits one of those fields, which now holds text they've already seen, the push looks concurrent and creates a conflicted copy for no reason.
+
+| Rules | Failed runs (1,000 × 300, 3 devices) | Lost text | False conflicts | Conflicted copies |
+|---|---|---|---|---|
+| §9.7 as written (`--rules doc`) | 141 | 85 | 56 | 6,233 |
+| Fix A: consistent snapshot (`--rules snapshot`) | 0 | 0 | 0 | 6,441 |
+| Fix B: per-field base versions (`--rules fieldbase`) | 0 | 0 | 0 | 6,352 |
+
+Both fixes also passed 18,000 more runs each, including 5 devices × 1,000 operations, and still replay Examples 1–3 exactly.
+
+- **Fix A, consistent snapshot (app rules only, no protocol change).** Keep each local note a consistent snapshot of the server at its base, plus dirty edits. After a push, take the server's note and advance the base only when nothing is left dirty. On a pull, skip a note that has dirty fields; the next push result brings it in. *Costs:*
+  - A note being edited doesn't show other devices' changes until its own push lands clean.
+  - A `REJECTED` note stays dirty, so it never receives updates until it's edited.
+  - About 2% more conflicted copies than Fix B.
+- **Fix B, per-field base versions (protocol change).** The client tracks the server version it last saw for each field. `NoteDto` carries the four field versions, a change carries a base for each sent field, and `concurrent(f)` compares against that field's base. After a push or pull, a clean field takes the server value and its version; a dirty field keeps its base. *Costs:*
+  - Four more numbers in `NoteDto`, a base map in `ChangeDto`, and four base columns (or one encoded column) in `NoteEntity`.
+  - Changes to §7.1, §8.3 and §8.5 to match.
+  - No visibility delay, and fewer copies.
+
+Nothing that depends on this is built yet (server: Phase 2, sync engine: Phase 4), so either fix costs only documentation now. Until one is chosen, `python docs/sync_protocol_model.py` exits non-zero, because it runs the contract as written.
 
 ---
 

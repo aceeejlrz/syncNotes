@@ -7,6 +7,22 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ---
 
+## Before Phase 2 — sync protocol model
+
+### The executable model found two holes the design review missed
+Built `docs/sync_protocol_model.py` from §9 as written: the server merge rules, the app's apply
+rules, and a scheduler that interleaves edits, syncs, lost or stale messages. The worked examples
+all passed, which looked reassuring, but 14% of randomized runs failed. Rule A (always advance
+the base after a push) silently overwrites another device's text when a field was edited during
+the push, and rule B (partial take on a dirty pull) creates false conflicts. Shrinking each
+failure to about 20–30 operations made the cause readable. Lesson: hand-traced examples check
+the paths you thought of; randomized interleavings find the ones you didn't.
+
+### Prove the harness can fail before trusting it
+A green randomized run means nothing unless the checks can fire. The model's self-check removes
+the last-writer check (it must report false conflicts and fail Example 3) and makes a dirty pull
+advance the base (it must report lost text). The same mutation was applied to each candidate fix.
+
 ## Phase 1 — Offline notes app
 
 ### `advanceUntilIdle()` ignores work left only in `backgroundScope`
