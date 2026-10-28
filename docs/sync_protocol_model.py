@@ -5,7 +5,8 @@ Rule R3 makes this the third leg of the merge contract, next to the server's Mer
 and the app's ChangeRules (Kotlin). It contains:
 
   * the server: per-user change counter, merge rules M1-M10 (section 9.4), push (9.5), pull (9.6)
-  * the app:    apply-after-push (rule A) and apply-after-pull (rule B) from section 9.7
+  * the app:    apply-after-push (rule A) and apply-after-pull (rule B) from section 9.7,
+                 with per-field base versions (ADR-018)
   * a scheduler that interleaves edits, syncs, and lost or late messages the way the real
     SyncEngine allows (section 9.9 / 9.10)
   * replays of the three worked examples in section 9.8
@@ -16,7 +17,7 @@ out, with no I/O, so they port directly to Java and Kotlin tests (section 12.4).
 
 Usage:
   python docs/sync_protocol_model.py                     # examples + self-check + 1000 x 300 runs
-  python docs/sync_protocol_model.py --rules doc --runs 200 --ops 300 --seed 1
+  python docs/sync_protocol_model.py --rules v1.4 --runs 200   # the superseded rules (fail)
   python docs/sync_protocol_model.py --trace 42          # print one run's events
 Exit status is non-zero if any example, self-check or invariant fails.
 Standard library only.
@@ -37,7 +38,7 @@ APPLIED, NOOP, CONFLICT_COPY, REJECTED = "APPLIED", "NOOP", "CONFLICT_COPY", "RE
 
 
 # --------------------------------------------------------------------------------------------
-# Rules: which variant of the contract to run. "doc" is ARCHITECTURE.md section 9 as written.
+# Rules: which variant to run. "contract" is ARCHITECTURE.md section 9 as specified.
 # --------------------------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -49,17 +50,21 @@ class Rules:
     # app
     push_apply: str = "doc"              # "doc" | "snapshot" | "fieldbase"
     pull_apply: str = "doc"              # "doc" | "snapshot" | "fieldbase"
-    pull_dirty_advance_base: bool = False  # deliberate bug, used only by the self-check
+    pull_dirty_advance_base: bool = False  # deliberate bug (v1.4 rules), self-check only
+    advance_dirty_field_bases: bool = False  # deliberate bug (contract rules), self-check only
 
 
-DOC = Rules("doc")
-# Fix family A: tighten the app's apply rules only (no protocol change). The local note stays a
-# consistent snapshot of the server at `base`, plus dirty edits.
+# The contract (ARCHITECTURE.md section 9, ADR-018): per-field base versions. NoteDto carries the
+# four field versions, every change carries the device's base for all four fields, and
+# concurrent(f) compares the server's field version against that field's base.
+CONTRACT = Rules("contract", field_bases=True, push_apply="fieldbase", pull_apply="fieldbase")
+# Superseded v1.4 rules (one note-level base). Kept so the two holes the model found stay
+# reproducible: --rules v1.4 fails about 14% of runs (lost text and false conflicts).
+V14 = Rules("v1.4")
+# The alternative fix that was considered: same protocol as v1.4, stricter apply rules (keep the
+# local note a consistent snapshot at its base). Passes too, with worse visibility; see 9.12.
 SNAPSHOT = Rules("snapshot", push_apply="snapshot", pull_apply="snapshot")
-# Fix family B: per-field base versions (protocol change: NoteDto carries field versions and a
-# change carries a base per sent field).
-FIELDBASE = Rules("fieldbase", field_bases=True, push_apply="fieldbase", pull_apply="fieldbase")
-RULES = {"doc": DOC, "snapshot": SNAPSHOT, "fieldbase": FIELDBASE}
+RULES = {"contract": CONTRACT, "v1.4": V14, "snapshot": SNAPSHOT}
 
 
 # --------------------------------------------------------------------------------------------
@@ -267,9 +272,11 @@ def apply_push_result(local: LocalNote, sent: dict, result: dict, rules: Rules,
     elif rules.push_apply == "fieldbase":
         for f in FIELDS:
             if f not in dirty:
-                setattr(n, f, server[f])
+                setattr(n, f, server[f])                       # clean: take value + its version
                 n.fbase[f] = server["fv"][f]
-        n.base = server["version"]
+            elif rules.advance_dirty_field_bases:              # deliberate bug (self-check)
+                n.fbase[f] = server["fv"][f]
+        n.base = server["version"]                             # note-level: stale-pull guard only
     else:
         raise ValueError(rules.push_apply)
     n.dirty, n.sync_error = dirty, None
@@ -358,7 +365,7 @@ class Device:
             return
         changes, sent = [], {}
         for n in batch:
-            fb = {f: n.fbase[f] for f in n.dirty} if self.rules.field_bases else None
+            fb = dict(n.fbase) if self.rules.field_bases else None   # all four field bases
             changes.append(Change(n.id, n.base, {f: getattr(n, f) for f in n.dirty}, fb))
             sent[n.id] = n.values()
         self.inflight = ("push_req", changes, sent, len(batch))
@@ -727,17 +734,19 @@ def print_trace(ops: list[tuple], rules: Rules, n_devices: int = 3):
 # --------------------------------------------------------------------------------------------
 
 def self_check(n_runs: int = 150) -> list[str]:
+    """Plant bugs into the contract rules; each must be caught."""
+    from dataclasses import replace
     fails = []
-    no_writer = Rules("mutant: no last-writer check", last_writer_check=False)
+    no_writer = replace(CONTRACT, name="mutant: no last-writer check", last_writer_check=False)
     if not any("Example 3" in f for f in run_examples(no_writer)):
         fails.append("self-check: Example 3 passed without the last-writer check")
     rep = randomized(no_writer, n_runs, 200, seed=10_000, quiet=True)
     if not rep["by_kind"].get("false_conflict"):
         fails.append("self-check: removing the last-writer check was not detected as false conflicts")
-    advance = Rules("mutant: pull advances base while dirty", pull_dirty_advance_base=True)
+    advance = replace(CONTRACT, name="mutant: dirty field bases advance", advance_dirty_field_bases=True)
     rep = randomized(advance, n_runs, 200, seed=20_000, quiet=True)
     if not rep["by_kind"].get("lost_text"):
-        fails.append("self-check: advancing the base on a dirty pull was not detected as lost text")
+        fails.append("self-check: advancing a dirty field's base was not detected as lost text")
     return fails
 
 
@@ -745,7 +754,7 @@ def self_check(n_runs: int = 150) -> list[str]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--rules", default="doc", choices=sorted(RULES))
+    ap.add_argument("--rules", default="contract", choices=sorted(RULES))
     ap.add_argument("--runs", type=int, default=1000)
     ap.add_argument("--ops", type=int, default=300)
     ap.add_argument("--seed", type=int, default=1)
