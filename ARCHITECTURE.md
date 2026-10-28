@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | Not started | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (2.1 and 2.4 done; 2.2–2.3 written, need Docker to verify) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -1126,7 +1126,7 @@ For a change from device **D**, with base versions **B_f** (one per field), and 
 | M1 | The note doesn't exist on the server | Create it from the sent fields (unsent fields default to empty or false) |
 | M2 | A sent field doesn't differ | Nothing to do for that field. This makes retries harmless |
 | M3 | Title or body differs, not concurrent | Apply it |
-| M4 | Title or body differs **and** is concurrent (true conflict) | The server keeps its title and body. A new **conflicted copy** note is created with the incoming title and body (the server's value fills in a field that wasn't sent). The copy's title is `"<title> (conflicted copy from <deviceName>)"` |
+| M4 | Title or body differs **and** is concurrent (true conflict) | The server keeps its title and body. A new **conflicted copy** note is created with the incoming title and body (the server's value fills in a field that wasn't sent). The copy's title is `"<title> (conflicted copy from <deviceName>)"`, with `<title>` shortened (by whole characters) so the copy's title stays within the 300-character limit; otherwise the insert would fail and the push would never succeed. "Not sent" means the field is absent; an empty string is a real sent value |
 | M5 | Pinned differs, not concurrent | Apply it |
 | M6 | Pinned differs and is concurrent | The server keeps its value (first write wins, no copy) |
 | M7 | Restore (trashed changes to false) | Always apply. Restoring can't lose anything |
@@ -1877,10 +1877,10 @@ gantt
 
 **Goal:** a deployed API that implements accounts and the full sync protocol, proven by tests.
 
-- [ ] **2.1 Project.** Generate `server/` with Spring Initializr: Spring Boot 4.1.x, Java 21, Maven, with Spring Web, Spring Security, OAuth2 Resource Server, Validation, JDBC API, Flyway Migration, PostgreSQL Driver, Spring Boot Actuator, Docker Compose Support and Testcontainers.
+- [x] **2.1 Project.** Generate `server/` with Spring Initializr: Spring Boot 4.1.x, Java 21, Maven, with Spring Web, Spring Security, OAuth2 Resource Server, Validation, JDBC API, Flyway Migration, PostgreSQL Driver, Spring Boot Actuator, Docker Compose Support and Testcontainers.
 - [ ] **2.2 Local database.** `compose.yaml` with PostgreSQL. A `local` profile with a 1-minute access token lifetime for testing.
 - [ ] **2.3 Schema.** `V1__init.sql` (§8.1).
-- [ ] **2.4 Merge engine first (test-driven).** Write parameterized tests for M1–M10 and the §9.8 examples, then implement `MergeEngine` until they pass.
+- [x] **2.4 Merge engine first (test-driven).** Write parameterized tests for M1–M10 and the §9.8 examples, then implement `MergeEngine` until they pass.
 - [ ] **2.5 Repositories.** `UserRepository` (including the row lock), `NoteRepository` (find by ids, save, changed since) using `JdbcClient`.
 - [ ] **2.6 Sync service and controller.** Push and pull (§9.5, §9.6), validation (§8.4), `ProblemDetail` errors.
 - [ ] **2.7 Auth.** Password encoder, `TokenService` (§10.4 gotcha), refresh token rotation, `AuthController`, `SecurityConfig`, `/api/v1/me`.

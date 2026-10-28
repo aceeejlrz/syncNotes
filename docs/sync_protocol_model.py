@@ -19,6 +19,8 @@ Usage:
   python docs/sync_protocol_model.py                     # examples + self-check + 1000 x 300 runs
   python docs/sync_protocol_model.py --rules v1.4 --runs 200   # the superseded rules (fail)
   python docs/sync_protocol_model.py --trace 42          # print one run's events
+  python docs/sync_protocol_model.py --export-vectors server/src/test/resources/merge-vectors.json
+  python docs/sync_protocol_model.py --check-vectors server/src/test/resources/merge-vectors.json
 Exit status is non-zero if any example, self-check or invariant fails.
 Standard library only.
 """
@@ -35,6 +37,14 @@ FIELDS = ("title", "body", "pinned", "trashed")
 TEXT = ("title", "body")
 
 APPLIED, NOOP, CONFLICT_COPY, REJECTED = "APPLIED", "NOOP", "CONFLICT_COPY", "REJECTED"
+
+TITLE_MAX = 300          # characters (code points), as PostgreSQL's char_length counts them (8.1, 8.4)
+
+
+def conflicted_copy_title(title: str, device_name: str) -> str:
+    """M4's copy title, shortened so the whole title fits TITLE_MAX (else the insert would fail)."""
+    suffix = f" (conflicted copy from {device_name})"
+    return title[: max(0, TITLE_MAX - len(suffix))] + suffix
 
 
 # --------------------------------------------------------------------------------------------
@@ -105,6 +115,7 @@ class MergeResult:
     copy: dict | None            # {"title", "body"} of a conflicted copy, if M4 fired
     conflict_fields: set         # text fields that triggered M4
     status: str
+    rules: set = field(default_factory=set)   # which of M1-M10 fired (for vectors and tests)
 
 
 def merge(current: ServerNote | None, change: Change, device: str, device_name: str,
@@ -112,7 +123,7 @@ def merge(current: ServerNote | None, change: Change, device: str, device_name: 
     """MergeEngine.merge: the pseudocode in section 9.4, line for line. Pure."""
     if current is None:                                                        # M1
         after = {"title": "", "body": "", "pinned": False, "trashed": False, **change.sent}
-        return MergeResult(None, after, set(FIELDS), None, set(), APPLIED)
+        return MergeResult(None, after, set(FIELDS), None, set(), APPLIED, {"M1"})
 
     def base(f):
         if rules.field_bases and change.fbase is not None:
@@ -128,35 +139,49 @@ def merge(current: ServerNote | None, change: Change, device: str, device_name: 
 
     nxt = current.values()
     copy = None
+    fired = set()
+    if any(f in change.sent and not differs(f) for f in FIELDS):
+        fired.add("M2")                                                        # M2
     conflict_fields = {f for f in TEXT if differs(f) and concurrent(f)}
 
     if conflict_fields:                                                        # M4
+        # "Not sent" means absent; an empty string is a real sent value.
         copy = {
-            "title": change.sent.get("title", current.title)
-                     + f" (conflicted copy from {device_name})",
+            "title": conflicted_copy_title(change.sent.get("title", current.title), device_name),
             "body": change.sent.get("body", current.body),
         }
+        fired.add("M4")
         content_applied = False
     else:
         for f in TEXT:
             if differs(f):
                 nxt[f] = change.sent[f]                                        # M3
+                fired.add("M3")
         content_applied = differs("title") or differs("body")
 
-    if differs("pinned") and not concurrent("pinned"):
-        nxt["pinned"] = change.sent["pinned"]                                  # M5, M6
+    if differs("pinned"):
+        if not concurrent("pinned"):
+            nxt["pinned"] = change.sent["pinned"]                              # M5
+            fired.add("M5")
+        else:
+            fired.add("M6")                                                    # M6: keep server
 
     if differs("trashed"):
         if change.sent["trashed"] is False:
             nxt["trashed"] = False                                             # M7
-        elif not (concurrent("title") or concurrent("body") or concurrent("trashed")):
-            nxt["trashed"] = True                                              # M8, M9
+            fired.add("M7")
+        elif concurrent("title") or concurrent("body") or concurrent("trashed"):
+            fired.add("M8")                                                    # M8: edits beat deletes
+        else:
+            nxt["trashed"] = True                                              # M9
+            fired.add("M9")
     if content_applied and current.trashed and concurrent("trashed"):
         nxt["trashed"] = False                                                 # M10
+        fired.add("M10")
 
     changed = {f for f in FIELDS if nxt[f] != getattr(current, f)}
     status = CONFLICT_COPY if copy else (APPLIED if changed else NOOP)
-    return MergeResult(current.values(), nxt, changed, copy, conflict_fields, status)
+    return MergeResult(current.values(), nxt, changed, copy, conflict_fields, status, fired)
 
 
 class Server:
@@ -730,6 +755,137 @@ def print_trace(ops: list[tuple], rules: Rules, n_devices: int = 3):
 
 
 # --------------------------------------------------------------------------------------------
+# Golden merge vectors for the Java MergeEngine (server/src/test/resources/merge-vectors.json)
+# --------------------------------------------------------------------------------------------
+
+VECTOR_SEED, VECTOR_RUNS, VECTOR_OPS, VECTOR_COUNT = 777, 120, 300, 1000
+
+
+def _vector(name, cur: ServerNote | None, ch: Change, device: str, device_name: str,
+            _merge=merge) -> dict:
+    # _merge is bound at definition time: generate_vectors() temporarily wraps `merge`.
+    m = _merge(cur, ch, device, device_name, CONTRACT)
+    return {
+        "name": name,
+        "current": None if cur is None else {
+            **cur.values(), "fieldVersions": dict(cur.fv), "fieldDevices": dict(cur.fd),
+            "version": cur.version},
+        "change": {"sent": dict(ch.sent),
+                   "baseVersions": dict(ch.fbase) if ch.fbase else {f: ch.base for f in FIELDS}},
+        "device": device, "deviceName": device_name,
+        "expected": {"status": m.status, "after": m.after, "changed": sorted(m.changed),
+                     "copy": m.copy, "rules": sorted(m.rules, key=lambda r: int(r[1:]))},
+    }
+
+
+def _note(title="t", body="b", pinned=False, trashed=False, fv=10, fd="D1", version=10, **over):
+    fvs = {f: fv for f in FIELDS}
+    fds = {f: fd for f in FIELDS}
+    for k, v in over.items():
+        kind, f = k.split("_", 1)            # e.g. fv_body=12, fd_body="D2"
+        (fvs if kind == "fv" else fds)[f] = v
+    return ServerNote("N", title, body, pinned, trashed, fvs, fds, version)
+
+
+def _change(sent, base=10, **bases):
+    return Change("N", base, sent, {f: bases.get(f, base) for f in FIELDS})
+
+
+def crafted_vectors() -> list[dict]:
+    """Hand-chosen inputs (rare rules and edge cases); expected outputs still come from the model."""
+    long_title = "x" * TITLE_MAX
+    name60 = "N" * 60
+    return [
+        _vector("M1 create", None, _change({"title": "New", "body": "", "pinned": False,
+                                             "trashed": False}, base=0), "D2", "Tablet"),
+        _vector("M2 retry is a no-op", _note(body="ab", fd_body="D2", fv_body=11, version=11),
+                _change({"body": "ab"}), "D2", "Tablet"),
+        _vector("M3 apply, not concurrent", _note(), _change({"title": "t2"}), "D2", "Tablet"),
+        _vector("M4 same field concurrent", _note(body="eggs, milk", fv_body=11, version=11),
+                _change({"body": "eggs, bread"}), "D2", "Tablet"),
+        _vector("M4 copy from a sent EMPTY title", _note(title="Server", fv_title=11, version=11),
+                _change({"title": ""}), "D2", "Tablet"),
+        _vector("M4 copy from a sent EMPTY body", _note(body="server body", fv_body=11, version=11),
+                _change({"body": ""}), "D2", "Tablet"),
+        _vector("M4 copy title truncated to 300 chars", _note(title="old", fv_title=11, version=11),
+                _change({"title": long_title}), "D2", name60),
+        _vector("M4 copy title truncation keeps whole code points (emoji at the cut)",
+                _note(title="old", fv_title=11, version=11),
+                _change({"title": "a" * 200 + "\U0001F600" * 100}), "D2", name60),
+        _vector("M4 not concurrent when the last writer is the pushing device (lost response)",
+                _note(body="ab", fv_body=11, fd_body="D2", version=11), _change({"body": "abc"}),
+                "D2", "Tablet"),
+        _vector("M5 pinned applied", _note(), _change({"pinned": True}), "D2", "Tablet"),
+        _vector("M6 pinned concurrent keeps server", _note(pinned=True, fv_pinned=11, version=11),
+                _change({"pinned": False}), "D2", "Tablet"),
+        _vector("M7 restore always applies", _note(trashed=True, fv_trashed=11, version=11),
+                _change({"trashed": False}), "D2", "Tablet"),
+        _vector("M8 trash ignored: body edited elsewhere", _note(body="edited", fv_body=11, version=11),
+                _change({"trashed": True}), "D2", "Tablet"),
+        _vector("M8 trash ignored: trashed changed elsewhere",
+                _note(trashed=False, fv_trashed=11, version=11), _change({"trashed": True}), "D2", "Tablet"),
+        _vector("M9 trash applies", _note(), _change({"trashed": True}), "D2", "Tablet"),
+        _vector("M10 edit restores a note trashed elsewhere",
+                _note(trashed=True, fv_trashed=11, version=11), _change({"body": "b2"}), "D2", "Tablet"),
+        _vector("per-field base: only the stale field is concurrent",
+                _note(title="T2", body="B2", fv_title=12, fd_title="D1", fv_body=11, fd_body="D1",
+                      version=12), _change({"body": "B3"}, base=10, body=11), "D2", "Tablet"),
+    ]
+
+
+def generate_vectors() -> dict:
+    captured, seen = [], set()
+    server_merge = merge
+
+    def capturing(cur, ch, device, device_name, rules):
+        if rules is CONTRACT:
+            v = _vector("random", cur, ch, device, device_name)
+            key = repr((v["current"], v["change"], v["device"]))
+            if key not in seen:
+                seen.add(key)
+                captured.append(v)
+        return server_merge(cur, ch, device, device_name, rules)
+
+    globals()["merge"] = capturing
+    try:
+        for r in range(VECTOR_RUNS):
+            ops = generate_ops(random.Random(VECTOR_SEED + r), VECTOR_OPS, 3)
+            simulate(ops, CONTRACT, 3)
+    finally:
+        globals()["merge"] = server_merge
+    # Deterministic, rule-balanced sample: keep every vector that fires a rare rule, then fill.
+    rng = random.Random(VECTOR_SEED)
+    rare = [v for v in captured if set(v["expected"]["rules"]) & {"M6", "M7", "M8", "M10"}]
+    rest = [v for v in captured if v not in rare]
+    rng.shuffle(rest)
+    sample = (rare + rest)[:VECTOR_COUNT]
+    for i, v in enumerate(sample):
+        v["name"] = f"random #{i}"
+    vectors = crafted_vectors() + sample
+    covered = sorted({r for v in vectors for r in v["expected"]["rules"]}, key=lambda r: int(r[1:]))
+    return {
+        "generator": "python docs/sync_protocol_model.py --export-vectors "
+                     "server/src/test/resources/merge-vectors.json",
+        "rules": "contract (ARCHITECTURE.md section 9, ADR-018)",
+        "notes": "A sent field is present in change.sent; absent means not sent. Devices D1..D3 "
+                 "map to fixed UUIDs in the Java test.",
+        "rulesCovered": covered,
+        "vectors": vectors,
+    }
+
+
+def _dump(doc: dict) -> str:
+    """Canonical text: sorted keys, one vector per line. Field order inside `sent` comes from
+    iterating a set (hash-randomized per process), so key sorting is what makes this stable."""
+    import json
+    meta = {k: v for k, v in doc.items() if k != "vectors"}
+    rows = [json.dumps(v, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            for v in doc["vectors"]]
+    return ('{"meta":' + json.dumps(meta, ensure_ascii=False, sort_keys=True)
+            + ',\n"vectors":[\n' + ",\n".join(rows) + "\n]}\n")
+
+
+# --------------------------------------------------------------------------------------------
 # Self-check: the harness must catch deliberately broken rules, or a green run means nothing
 # --------------------------------------------------------------------------------------------
 
@@ -761,8 +917,27 @@ def main(argv=None) -> int:
     ap.add_argument("--devices", type=int, default=3)
     ap.add_argument("--trace", type=int, metavar="SEED", help="print the events of one run")
     ap.add_argument("--no-self-check", action="store_true")
+    ap.add_argument("--export-vectors", metavar="PATH", help="write golden merge vectors (JSON)")
+    ap.add_argument("--check-vectors", metavar="PATH", help="fail if PATH is stale vs the model")
     a = ap.parse_args(argv)
     rules = RULES[a.rules]
+
+    if a.export_vectors or a.check_vectors:
+        doc = generate_vectors()
+        text = _dump(doc)
+        if a.export_vectors:
+            with open(a.export_vectors, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+            print(f"wrote {len(doc['vectors'])} vectors covering {', '.join(doc['rulesCovered'])}"
+                  f" to {a.export_vectors}")
+            return 0
+        with open(a.check_vectors, encoding="utf-8") as fh:
+            current = fh.read()
+        if current != text:
+            print(f"STALE: {a.check_vectors} differs from the model; re-run --export-vectors")
+            return 1
+        print(f"ok: {a.check_vectors} matches the model ({len(doc['vectors'])} vectors)")
+        return 0
 
     if a.trace is not None:
         print_trace(generate_ops(random.Random(a.trace), a.ops, a.devices), rules, a.devices)
