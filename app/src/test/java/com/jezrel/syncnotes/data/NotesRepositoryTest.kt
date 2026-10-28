@@ -11,6 +11,7 @@ import com.jezrel.syncnotes.data.local.NoteEntity
 import com.jezrel.syncnotes.data.local.SyncNotesDatabase
 import com.jezrel.syncnotes.data.local.has
 import com.jezrel.syncnotes.data.repository.NotesRepository
+import com.jezrel.syncnotes.data.repository.RoomNotesRepository
 import com.jezrel.syncnotes.sync.SyncScheduler
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -41,7 +42,7 @@ class NotesRepositoryTest {
         db = Room.inMemoryDatabaseBuilder(ctx, SyncNotesDatabase::class.java)
             .allowMainThreadQueries()
             .build()
-        repo = NotesRepository(
+        repo = RoomNotesRepository(
             db = db,
             noteDao = db.noteDao(),
             clock = clock,

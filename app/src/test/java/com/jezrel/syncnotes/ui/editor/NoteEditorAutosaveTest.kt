@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.jezrel.syncnotes.core.time.Clock
 import com.jezrel.syncnotes.data.local.SyncNotesDatabase
 import com.jezrel.syncnotes.data.repository.NotesRepository
+import com.jezrel.syncnotes.data.repository.RoomNotesRepository
 import com.jezrel.syncnotes.sync.SyncScheduler
 import com.jezrel.syncnotes.ui.navigation.NoteEditor
 import kotlinx.coroutines.Dispatchers
@@ -125,7 +126,7 @@ class NoteEditorAutosaveTest {
             .setTransactionExecutor(dispatcher.asExecutor())
             .allowMainThreadQueries() // the test dispatcher runs on Robolectric's main thread
             .build()
-        val repo = NotesRepository(
+        val repo = RoomNotesRepository(
             db = db,
             noteDao = db.noteDao(),
             clock = object : Clock { override fun nowMillis() = 1L },
