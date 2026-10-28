@@ -9,6 +9,15 @@ Scratch space for the next change and open questions
   2.2 (compose PostgreSQL) and 2.3 (Flyway runs `V1__init.sql`) via the generated `contextLoads`
   test, and for every Testcontainers step after (2.5, 2.8). Until then only the pure merge-engine
   tests run: `cd server && ./mvnw test -Dtest='MergeEngine*'` (JAVA_HOME = JDK 25).
+- [ ] **2.6 obligations to MergeEngine.** Before calling the engine, cut `deviceName` to 60
+  characters *by code points* (a plain `substring` can split an emoji), and do the `REJECTED`
+  length checks with `NoteLimits.length`, not `String.length()`. Otherwise emoji-heavy text passes
+  Java validation, violates PostgreSQL's `char_length` check, and the push rolls back forever.
+  Add a service-level test: 61+ character device name, emoji title near the 300 limit.
+- [ ] **2.11 CI must enforce R3.** `server.yml` should also run
+  `python docs/sync_protocol_model.py` and
+  `python docs/sync_protocol_model.py --check-vectors server/src/test/resources/merge-vectors.json`,
+  so a model change that wasn't re-exported fails CI instead of relying on memory.
 
 ## Now (Phase 0)
 
