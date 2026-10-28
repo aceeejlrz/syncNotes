@@ -9,6 +9,29 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 1 — Offline notes app
 
+### Material 3 icon buttons are 40 dp drawn, 48 dp touchable
+`assertWidthIsAtLeast(48.dp)` on an `IconButton` fails at 40 dp: M3 draws the button smaller
+and extends the *touch* area to 48 dp via `minimumInteractiveComponentSize`. The guideline is
+about touch targets, so check `fetchSemanticsNode().touchBoundsInRoot` instead (find the button
+via the merged tree's content description, not the 24 dp icon).
+
+### "Outlined" legacy icons aren't always hollow
+`Icons.Outlined.Star` is the same solid star as `Icons.Filled.Star` (class sizes 6189 vs 6151
+bytes; a genuinely hollow icon like `FavoriteBorder` adds ~560). Core has no hollow star, so pin
+state uses `IconToggleButton` (TalkBack announces on/off) plus a visible "Pinned" label rather
+than color alone.
+
+### Dark mode needs the window theme and a Surface, not just the Compose theme
+`SyncNotesTheme` follows the system setting, but the window theme was `Theme.Material.Light`,
+which shows as a white flash in dark mode. Added `values-night/themes.xml`. Text drawn outside a
+Scaffold or Surface uses M3's default content color (black), so the nav host sits inside a
+themed `Surface`.
+
+### Edge-to-edge apps must pad for the keyboard themselves
+With targetSdk 35+, `adjustResize` no longer shrinks the window, so the editor uses
+`.padding(padding).consumeWindowInsets(padding).imePadding()`. A bare `imePadding()` after the
+Scaffold padding counts the navigation-bar inset twice.
+
 ### Markdown renderer: newest compile-compatible is 0.41.0
 `multiplatform-markdown-renderer` tracks Kotlin closely: 0.42+ pull kotlin-stdlib 2.4.x
 (metadata the 2.2.10 compiler rejects), 0.41.0 pulls 2.3.21 (metadata 2.3.0, at the readable
