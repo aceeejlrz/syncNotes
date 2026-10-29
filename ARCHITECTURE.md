@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | In progress (2.1 and 2.4 done; 2.2–2.3 written, need Docker to verify) | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.5 done) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -1878,10 +1878,10 @@ gantt
 **Goal:** a deployed API that implements accounts and the full sync protocol, proven by tests.
 
 - [x] **2.1 Project.** Generate `server/` with Spring Initializr: Spring Boot 4.1.x, Java 21, Maven, with Spring Web, Spring Security, OAuth2 Resource Server, Validation, JDBC API, Flyway Migration, PostgreSQL Driver, Spring Boot Actuator, Docker Compose Support and Testcontainers.
-- [ ] **2.2 Local database.** `compose.yaml` with PostgreSQL. A `local` profile with a 1-minute access token lifetime for testing.
-- [ ] **2.3 Schema.** `V1__init.sql` (§8.1).
+- [x] **2.2 Local database.** `compose.yaml` with PostgreSQL. A `local` profile with a 1-minute access token lifetime for testing.
+- [x] **2.3 Schema.** `V1__init.sql` (§8.1).
 - [x] **2.4 Merge engine first (test-driven).** Write parameterized tests for M1–M10 and the §9.8 examples, then implement `MergeEngine` until they pass.
-- [ ] **2.5 Repositories.** `UserRepository` (including the row lock), `NoteRepository` (find by ids, save, changed since) using `JdbcClient`.
+- [x] **2.5 Repositories.** `UserRepository` (including the row lock), `NoteRepository` (find by ids, save, changed since) using `JdbcClient`.
 - [ ] **2.6 Sync service and controller.** Push and pull (§9.5, §9.6), validation (§8.4), `ProblemDetail` errors.
 - [ ] **2.7 Auth.** Password encoder, `TokenService` (§10.4 gotcha), refresh token rotation, `AuthController`, `SecurityConfig`, `/api/v1/me`.
 - [ ] **2.8 Integration tests** with Testcontainers: register → push → pull round trip, pagination, change numbers strictly increase, two concurrent pushes for one user (two threads and a latch), cross-account isolation, token refresh and revocation.
@@ -1974,9 +1974,11 @@ gantt
 
 | Environment | App build | API base URL | Database |
 |---|---|---|---|
-| Local, emulator | debug | `http://10.0.2.2:8080/` (the emulator's address for your laptop) | PostgreSQL in Docker |
-| Local, physical phone | debug | `http://localhost:8080/` after `adb reverse tcp:8080 tcp:8080` | PostgreSQL in Docker |
+| Local, emulator | debug | `http://10.0.2.2:8090/` (the emulator's address for your laptop) | PostgreSQL in Docker |
+| Local, physical phone | debug | `http://localhost:8090/` after `adb reverse tcp:8090 tcp:8090` | PostgreSQL in Docker |
 | Production | release | `https://syncnotes-api.fly.dev/` | Neon |
+
+The local server listens on **8090**, set in the `local` profile, because 8080 is commonly taken on a development machine (here, by Jenkins). Production keeps Spring's default 8080 inside the container behind Fly.io's proxy.
 
 ```mermaid
 flowchart LR
@@ -1987,8 +1989,8 @@ flowchart LR
         PGL[("PostgreSQL in Docker")]
         SB --> PGL
     end
-    EA -- "10.0.2.2 port 8080" --> SB
-    EB -- "10.0.2.2 port 8080" --> SB
+    EA -- "10.0.2.2 port 8090" --> SB
+    EB -- "10.0.2.2 port 8090" --> SB
     Phone["Phone, release build"] -- "HTTPS" --> Fly["Fly.io: Spring Boot container"]
     Fly -- "JDBC over TLS" --> Neon[("Neon PostgreSQL")]
 ```
@@ -2004,7 +2006,7 @@ android {
     }
     buildTypes {
         debug {
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/\"")
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8090/\"")
         }
         release {
             isMinifyEnabled = true

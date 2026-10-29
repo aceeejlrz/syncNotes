@@ -9,6 +9,19 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### Proving the row lock: a lock timeout, not a sleep
+To show `SELECT ... FOR UPDATE` really serializes pushes per user, one transaction holds Alice's
+row while a second sets `SET LOCAL lock_timeout = '300ms'` and tries to lock it: PostgreSQL cancels
+it with SQLSTATE `55P03` (lock_not_available). Spring leaves that as `UncategorizedSQLException`
+rather than `PessimisticLockingFailureException`, so assert the SQL state. Locking Bob's row at
+the same time succeeds. Removing `FOR UPDATE` makes the test fail. `lockAndGetSyncVersion` also
+refuses to run outside a transaction, where the lock would release immediately.
+
+### Local port 8090, and 300 emoji is 300 characters
+8080 was already taken on the dev machine (Jenkins), so the `local` profile serves on 8090
+(section 14.1). A repository test confirms PostgreSQL's `char_length` counts code points: a title
+of 300 emoji (600 UTF-16 units) is accepted and 301 is rejected, matching `NoteLimits.length`.
+
 ### Golden vectors keep the Java merge engine and the model in lockstep
 `docs/sync_protocol_model.py --export-vectors` dumps 1,017 real merge inputs/outputs (random runs
 plus hand-picked edge cases, expected outputs always from the model) to

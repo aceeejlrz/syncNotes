@@ -4,3 +4,6 @@ syncnotes:
     # Short-lived access tokens to exercise the silent refresh (conflict matrix C11).
     # Bound to configuration properties in step 2.7 (auth).
     access-token-ttl: 1m
+
+server:
+  port: 8090   # 8080 is often taken locally (e.g. Jenkins); see ARCHITECTURE.md section 14.1
