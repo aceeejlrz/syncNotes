@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.5 done) | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.6 done) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -985,6 +985,10 @@ Codes: `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `TOKEN_INVALID`, `VALIDATION_FAILED
 | Pull `limit` | 1 to 500, default 200 | Clamped |
 | Password | At least 8 characters | 400 |
 
+Character limits count Unicode code points, as PostgreSQL's `char_length` does, not Java's UTF-16 units: a title of 300 emoji is 300 characters. A device name is cut by code points too, so an emoji is never split.
+
+Every 400 is a Problem Details body with `code: VALIDATION_FAILED`, including Spring's own (malformed JSON, an invalid UUID, a non-numeric `since`). A negative `since` is also a 400.
+
 The app pushes in batches of 25 notes, which keeps requests well under a few megabytes even with long notes.
 
 ### 8.5 Kotlin DTOs and API interfaces
@@ -1216,35 +1220,40 @@ Why the **last writer device** check matters: suppose the phone pushes, the serv
 ```java
 @Transactional
 public PushResponse push(UUID userId, PushRequest request) {
+    rejectDuplicateIds(request.changes());                         // 400 for the whole request
+    String deviceName = NoteLimits.truncate(request.deviceName(), NoteLimits.DEVICE_NAME_MAX);
     long counter = users.lockAndGetSyncVersion(userId);          // SELECT ... FOR UPDATE
-    Map<UUID, NoteRow> current = notes.findByIds(userId, request.changeIds());
-    Instant now = clock.instant();
-    List<PushResult> results = new ArrayList<>();
+    Map<UUID, NoteRow> current = notes.findByIds(userId, ids(request));
+    Instant now = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);   // PostgreSQL keeps micros
+    List<PushResultDto> results = new ArrayList<>();
 
     for (ChangeDto change : request.changes()) {
-        Optional<String> invalid = NoteLimits.check(change);
+        Optional<String> invalid = tooLong(change);                // counted in code points
         if (invalid.isPresent()) {
-            results.add(PushResult.rejected(change.id(), invalid.get()));
+            results.add(PushResultDto.rejected(change.id(), invalid.get()));
             continue;
         }
-        MergeResult merge = MergeEngine.merge(current.get(change.id()), change,
-                                              request.deviceId(), request.deviceName());
-        NoteRow saved = merge.before();
-        if (merge.mainChanged()) {
+        NoteRow before = current.get(change.id());
+        MergeResult merge = MergeEngine.merge(before == null ? null : before.toServerNote(),
+                                              toIncoming(change), request.deviceId(), deviceName);
+        NoteRow saved = before;
+        if (merge.mainChanged()) {                                 // a NOOP takes no number
             counter++;
-            saved = merge.after().stamp(counter, merge.changedFields(), request.deviceId(), now);
+            saved = stamp(before, change, merge, counter, request.deviceId(), now);
             notes.save(userId, saved);
         }
-        if (merge.conflictCopy() != null) {
+        if (merge.conflictCopy() != null) {                        // the copy gets its own number
             counter++;
-            notes.save(userId, merge.conflictCopy().stampAll(counter, request.deviceId(), now));
+            notes.save(userId, copyRow(merge.conflictCopy(), counter, request.deviceId(), now));
         }
-        results.add(PushResult.of(change.id(), merge.status(), saved));
+        results.add(PushResultDto.of(change.id(), merge.status(), NoteDto.from(saved)));
     }
     users.setSyncVersion(userId, counter);
     return new PushResponse(results);
 }
 ```
+
+`MergeEngine` is pure: it decides the values, the changed fields, the copy and the status. Stamping is the service's job. `stamp` gives each changed field the new number and the pushing device. For M1, every field is new, and `created_at` is the client's. The copy is a fresh UUID with all four fields at its own number. This must match the executable model's `Server.push`, which `SyncServiceTest` replays for the three examples in [§9.8](#98-worked-examples).
 
 ```java
 long lockAndGetSyncVersion(UUID userId) {
@@ -1623,9 +1632,10 @@ sequenceDiagram
 **Server**
 
 - `SecurityConfig`: stateless sessions, CSRF off (no cookies are used), `/api/v1/auth/**` and `/actuator/health` public, everything else authenticated, `oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))`.
-- `JwtConfig`: one 256-bit secret from the `JWT_SECRET` environment variable. Decoder: `NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build()`. Encoder: `new NimbusJwtEncoder(new ImmutableSecret<>(key))`.
+- `JwtConfig`: one 256-bit secret from the `JWT_SECRET` environment variable, as base64 (`openssl rand -base64 32`). The server refuses to start if it is missing, isn't base64, or decodes to fewer than 32 bytes. The `local` profile and the tests carry their own throwaway keys. Decoder: `NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build()`. Encoder: `new NimbusJwtEncoder(new ImmutableSecret<>(key))`.
 - **Gotcha:** when encoding, pass `JwsHeader.with(MacAlgorithm.HS256).build()` in `JwtEncoderParameters`. The default header is RS256, which fails with a secret key.
-- Controllers read the user id from `jwt.getSubject()`. Every SQL statement filters by it.
+- Controllers read the user id from `jwt.getSubject()`. Every SQL statement filters by it. A correctly signed token whose subject isn't a UUID, or whose account no longer exists, gets the same 401 `TOKEN_INVALID` as a bad signature, never a 500.
+- A 401 carries `WWW-Authenticate: Bearer` and a Problem Details body with `code: TOKEN_INVALID`.
 - Bucket4j: roughly 10 requests per minute per IP on login, register and refresh.
 
 **App**
@@ -1882,7 +1892,7 @@ gantt
 - [x] **2.3 Schema.** `V1__init.sql` (§8.1).
 - [x] **2.4 Merge engine first (test-driven).** Write parameterized tests for M1–M10 and the §9.8 examples, then implement `MergeEngine` until they pass.
 - [x] **2.5 Repositories.** `UserRepository` (including the row lock), `NoteRepository` (find by ids, save, changed since) using `JdbcClient`.
-- [ ] **2.6 Sync service and controller.** Push and pull (§9.5, §9.6), validation (§8.4), `ProblemDetail` errors.
+- [x] **2.6 Sync service and controller.** Push and pull (§9.5, §9.6), validation (§8.4), `ProblemDetail` errors.
 - [ ] **2.7 Auth.** Password encoder, `TokenService` (§10.4 gotcha), refresh token rotation, `AuthController`, `SecurityConfig`, `/api/v1/me`.
 - [ ] **2.8 Integration tests** with Testcontainers: register → push → pull round trip, pagination, change numbers strictly increase, two concurrent pushes for one user (two threads and a latch), cross-account isolation, token refresh and revocation.
 - [ ] **2.9 Rate limiting** on the auth endpoints.

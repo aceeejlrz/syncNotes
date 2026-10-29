@@ -9,6 +9,22 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### `jwt()` in MockMvc skips the decoder
+`SecurityMockMvcRequestPostProcessors.jwt()` puts a ready-made token into the security context
+without decoding it, so a wrong algorithm or key encoding would still pass. `SyncControllerTest`
+signs real HS256 tokens with the server's `JwtEncoder` instead, plus one signed with a different
+key and one that expired, so the real `JwtDecoder` runs on every request.
+
+### Some Spring 400s have no ProblemDetail until `super` builds it
+In `ResponseEntityExceptionHandler.handleExceptionInternal`, bean-validation failures arrive with
+a `null` body; `super` builds the `ProblemDetail`. To add `code: VALIDATION_FAILED` to every 400,
+call `super` first and tag the body it returns.
+
+### Truncate timestamps to microseconds where they're created
+PostgreSQL stores microseconds; JDK 25's clock has nanoseconds. Building the push response from
+the in-memory row would then show an `updatedAt` that differs from the next pull. `SyncService`
+truncates `now` and the client's `createdAt`, and a test checks a push result equals the pull.
+
 ### Proving the row lock: a lock timeout, not a sleep
 To show `SELECT ... FOR UPDATE` really serializes pushes per user, one transaction holds Alice's
 row while a second sets `SET LOCAL lock_timeout = '300ms'` and tries to lock it: PostgreSQL cancels

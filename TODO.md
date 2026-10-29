@@ -8,7 +8,7 @@ Scratch space for the next change and open questions
 - [x] **Docker verified.** 2.2 (compose PostgreSQL + local profile on 8090) and 2.3 (Flyway
   applies `V1__init.sql`) pass; 2.5 repository and row-lock tests run against PostgreSQL 17.
   Run the server suite with `cd server && ./mvnw test` (JAVA_HOME = JDK 25, Docker running).
-- [ ] **2.6 obligations to MergeEngine.** Before calling the engine, cut `deviceName` to 60
+- [x] **2.6 obligations to MergeEngine.** Done: `NoteLimits.truncate`, code-point checks, and `SyncServiceTest` covers both. Before calling the engine, cut `deviceName` to 60
   characters *by code points* (a plain `substring` can split an emoji), and do the `REJECTED`
   length checks with `NoteLimits.length`, not `String.length()`. Otherwise emoji-heavy text passes
   Java validation, violates PostgreSQL's `char_length` check, and the push rolls back forever.
