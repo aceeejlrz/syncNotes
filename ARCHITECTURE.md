@@ -1634,7 +1634,7 @@ sequenceDiagram
 - `SecurityConfig`: stateless sessions, CSRF off (no cookies are used), `/api/v1/auth/**` and `/actuator/health` public, everything else authenticated, `oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))`.
 - `JwtConfig`: one 256-bit secret from the `JWT_SECRET` environment variable, as base64 (`openssl rand -base64 32`). The server refuses to start if it is missing, isn't base64, or decodes to fewer than 32 bytes. The `local` profile and the tests carry their own throwaway keys. Decoder: `NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build()`. Encoder: `new NimbusJwtEncoder(new ImmutableSecret<>(key))`.
 - **Gotcha:** when encoding, pass `JwsHeader.with(MacAlgorithm.HS256).build()` in `JwtEncoderParameters`. The default header is RS256, which fails with a secret key.
-- Controllers read the user id from `jwt.getSubject()`. Every SQL statement filters by it. A correctly signed token whose subject isn't a UUID, or whose account no longer exists, gets the same 401 `TOKEN_INVALID` as a bad signature, never a 500.
+- Controllers read the user id from `jwt.getSubject()`. Every SQL statement filters by it. A correctly signed token whose subject isn't a UUID gets the same 401 `TOKEN_INVALID` as a bad signature, never a 500. So does a push for an account that no longer exists (the row lock finds no user). A pull for one simply returns an empty page, because pull never reads `users`.
 - A 401 carries `WWW-Authenticate: Bearer` and a Problem Details body with `code: TOKEN_INVALID`.
 - Bucket4j: roughly 10 requests per minute per IP on login, register and refresh.
 

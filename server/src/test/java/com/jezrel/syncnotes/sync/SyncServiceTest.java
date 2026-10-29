@@ -161,6 +161,16 @@ class SyncServiceTest {
     }
 
     @Test
+    void m1_withNoFieldsSent_createsTheNoteWithDefaults() {
+        ChangeDto bare = new ChangeDto(N, new FieldVersionsDto(0L, 0L, 0L, 0L), CREATED, null, null, null, null);
+        PushResultDto r = only(push(ALICE, PHONE, "Phone", bare));
+        assertThat(r.status()).isEqualTo(PushStatus.APPLIED);
+        assertThat(r.note().version()).isEqualTo(1);
+        assertThat(r.note()).extracting(NoteDto::title, NoteDto::body, NoteDto::pinned, NoteDto::trashed)
+                .containsExactly("", "", false, false);
+    }
+
+    @Test
     void aNoop_consumesNoChangeNumber() {
         push(ALICE, PHONE, "Phone", newNote(N, "Trip ideas"));
         PushResultDto retry = only(push(ALICE, PHONE, "Phone", newNote(N, "Trip ideas")));   // same values
