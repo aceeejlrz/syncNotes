@@ -15,4 +15,9 @@ public final class NoteLimits {
     public static int length(String text) {
         return text.codePointCount(0, text.length());
     }
+
+    /** {@code text} cut to at most {@code max} code points, never splitting a character. */
+    public static String truncate(String text, int max) {
+        return length(text) <= max ? text : text.substring(0, text.offsetByCodePoints(0, max));
+    }
 }

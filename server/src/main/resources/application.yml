@@ -4,6 +4,12 @@ spring:
   flyway:
     locations: classpath:db/migration
 
+syncnotes:
+  auth:
+    # Base64 of at least 32 random bytes: openssl rand -base64 32 (section 10.4).
+    # No default on purpose: the server refuses to start without the JWT_SECRET secret.
+    jwt-secret: ${JWT_SECRET}
+
 management:
   endpoints:
     web:

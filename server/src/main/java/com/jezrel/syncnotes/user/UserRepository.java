@@ -29,6 +29,7 @@ public class UserRepository {
      * here until this transaction ends, so change numbers become visible in order and a pull can
      * never skip one (section 9.3). Pushes for different users don't block each other.
      *
+     * @throws UnknownUserException if the account doesn't exist (a valid token for a deleted user)
      * @throws IllegalStateException outside a transaction, where the lock would be released at
      *     once and silently stop protecting the counter
      */
@@ -39,7 +40,8 @@ public class UserRepository {
         return jdbc.sql("SELECT sync_version FROM users WHERE id = :id FOR UPDATE")
                 .param("id", userId)
                 .query(Long.class)
-                .single();
+                .optional()
+                .orElseThrow(() -> new UnknownUserException(userId));
     }
 
     public void setSyncVersion(UUID userId, long syncVersion) {
