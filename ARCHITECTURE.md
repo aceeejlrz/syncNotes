@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.8 done) | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.9 done) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -184,7 +184,7 @@ Exact versions are pinned in `gradle/libs.versions.toml` and `server/pom.xml`, c
 | Data access | `JdbcClient` + Flyway | Sync needs explicit SQL and row locks. JPA's caching and dirty checking get in the way |
 | Database | PostgreSQL on Neon | Managed, free tier, already familiar |
 | Auth | Spring Security (OAuth2 Resource Server with JWT), BCrypt | Standard and stateless |
-| Rate limiting | Bucket4j | Protects the auth endpoints |
+| Rate limiting | Bucket4j, with Caffeine holding the buckets | Protects the auth endpoints |
 | Tests | JUnit 5, Testcontainers (real PostgreSQL) | Tests run against the same database engine as production |
 | Hosting | Docker on Fly.io | Same pipeline as webHookDebugger |
 
@@ -1642,7 +1642,8 @@ sequenceDiagram
 - A 401 carries `WWW-Authenticate: Bearer` and a Problem Details body with `code: TOKEN_INVALID`.
 - Rotation is one atomic `UPDATE ... RETURNING`, so of two concurrent refreshes with the same token exactly one wins. Each rotation also deletes that user's tokens past their expiry. Revoked ones stay until then, which keeps the table bounded and leaves reuse detection possible.
 - `AuthService` hashes before any transaction starts, so BCrypt never holds a database connection. Login checks a hash even for an unknown email, so timing doesn't reveal which emails have accounts.
-- Bucket4j: roughly 10 requests per minute per IP on login, register and refresh.
+- Bucket4j: 10 requests per minute, per client and per endpoint, on login, register and refresh. Logout isn't limited. A refused request gets 429 `RATE_LIMITED` with `Retry-After`, before the body is read or a password hashed, and a refused refresh doesn't spend its token. Buckets are in memory: a restart resets them, and each machine counts separately, which is fine for one machine.
+- The client is `Fly-Client-IP`, because the connection's address is Fly's proxy; without that header (local runs) it's the connection's address. `X-Forwarded-For` is ignored because a client can write to it. IPv6 counts per /64, since one device is usually given a whole /64. Fly's docs don't say the proxy overwrites a client-supplied `Fly-Client-IP`, so step 2.10 checks that on the live server.
 
 **App**
 
@@ -1664,7 +1665,7 @@ class TokenAuthenticator @Inject constructor(
 }
 ```
 
-- `SessionManager.refreshAccessToken(failedToken)` holds a `Mutex`. If the current access token is already different from `failedToken`, another request refreshed it first, so it returns the current one. Otherwise it calls `/auth/refresh` through a separate OkHttp client that has no authenticator (so it can't loop). On failure it marks the session expired and returns `null`.
+- `SessionManager.refreshAccessToken(failedToken)` holds a `Mutex`. If the current access token is already different from `failedToken`, another request refreshed it first, so it returns the current one. Otherwise it calls `/auth/refresh` through a separate OkHttp client that has no authenticator (so it can't loop). **Only a 401 from `/auth/refresh` marks the session expired.** After a 429, a 5xx or a network error the refresh token is still good, so it keeps the session and returns `null`, and the sync retries later (§9.10). Treating every failure as expiry would sign users out for a busy network or a rate limit.
 - `TokenStore` encrypts the refresh token with an AES-GCM key that lives in the Android Keystore:
 
 ```kotlin
@@ -1901,7 +1902,7 @@ gantt
 - [x] **2.6 Sync service and controller.** Push and pull (§9.5, §9.6), validation (§8.4), `ProblemDetail` errors.
 - [x] **2.7 Auth.** Password encoder, `TokenService` (§10.4 gotcha), refresh token rotation, `AuthController`, `SecurityConfig`, `/api/v1/me`.
 - [x] **2.8 Integration tests** with Testcontainers: register → push → pull round trip, pagination, change numbers strictly increase, two concurrent pushes for one user (two threads and a latch), cross-account isolation, token refresh and revocation.
-- [ ] **2.9 Rate limiting** on the auth endpoints.
+- [x] **2.9 Rate limiting** on the auth endpoints.
 - [ ] **2.10 Deploy.** Dockerfile, Neon database, Fly.io app and secrets, health check (§14.4).
 - [ ] **2.11 Server CI** (`server.yml`, §14.5). Run `git update-index --chmod=+x server/mvnw`.
 - [ ] **2.12 `docs/api.http`** with runnable requests for every endpoint, including a manual conflict (two pushes with the same base).

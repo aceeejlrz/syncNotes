@@ -21,6 +21,14 @@ Scratch space for the next change and open questions
 - [ ] **Decide: the local dev signing key is committed** in `application-local.yml` (throwaway, but
   section 10.5 says nothing secret in git). Keep it, or move it to the gitignored `.env`.
 - [ ] **2.10 deploy needs `JWT_SECRET`** set as a Fly.io secret (`openssl rand -base64 32`).
+- [ ] **2.10: check `Fly-Client-IP` can't be faked.** Fly's docs don't say the proxy overwrites a
+  client-supplied value. On the live server, send 11 logins with a different made-up `Fly-Client-IP`
+  each: the 11th must be a 429. If not, the limit can be bypassed: switch `ClientIp` to the
+  second-from-right `X-Forwarded-For` entry, which the proxy itself appended.
+- [ ] **3.5/3.8: a failed refresh isn't always an expired session.** Only a 401 from `/auth/refresh`
+  ends the session; 429, 5xx and network errors must keep it (section 10.4). Check what the sync does
+  when the authenticator returns null (section 9.10 `e.code() == 401 -> AuthFailed`). Add a
+  MockWebServer test for a 429 on refresh.
 - [ ] **2.11 CI must enforce R3.** `server.yml` should also run
   `python docs/sync_protocol_model.py` and
   `python docs/sync_protocol_model.py --check-vectors server/src/test/resources/merge-vectors.json`,

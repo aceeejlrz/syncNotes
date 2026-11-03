@@ -9,6 +9,13 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### Rate limits: the client's address and the bucket's name are the hard parts
+Behind a proxy `getRemoteAddr()` is the proxy, so every user would share one bucket; `Fly-Client-IP`
+holds the real client. `X-Forwarded-For` starts with whatever the client wrote. An IPv6 client
+controls a whole /64, so it counts as one. A bucket named after the raw URL could be bypassed:
+`/logi%6E` reaches the login handler with a new name, so each endpoint has a fixed name. Buckets need
+an eviction policy too; one idle for a full period is full again, so dropping it loses nothing.
+
 ### Prove the concurrency test can fail
 The test that writers and a cursor-following reader run together passed first time, which proves
 little. Two temporary mutants showed it has teeth. Removing `FOR UPDATE` made pushes collide on the
