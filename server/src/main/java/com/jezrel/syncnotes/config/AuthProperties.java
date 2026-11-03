@@ -15,5 +15,6 @@ import org.springframework.validation.annotation.Validated;
 public record AuthProperties(
         @NotBlank String jwtSecret,
         @DefaultValue("15m") Duration accessTokenTtl,
-        @DefaultValue("30d") Duration refreshTokenTtl) {
+        @DefaultValue("30d") Duration refreshTokenTtl,
+        @DefaultValue("10") int rateLimitPerMinute) {
 }

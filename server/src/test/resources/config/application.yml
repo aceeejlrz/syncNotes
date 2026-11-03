@@ -1,4 +1,5 @@
 # Test-only settings, layered over src/main/resources/application.yml (config/ wins).
 syncnotes:
   auth:
+    rate-limit-per-minute: 1000000   # RateLimitEndToEndTest sets the real limit itself
     jwt-secret: 8xXKL9ILGTT7n7ox0KCV25CraU/ddj+kH9U0XXgwAi0=   # test-only signing key

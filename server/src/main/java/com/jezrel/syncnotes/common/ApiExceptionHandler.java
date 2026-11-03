@@ -47,6 +47,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                         "Missing, invalid or expired access token."));
     }
 
+    @ExceptionHandler(RateLimitedException.class)
+    ResponseEntity<ProblemDetail> rateLimited(RateLimitedException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(e.retryAfterSeconds()))
+                .body(ApiProblems.of(HttpStatus.TOO_MANY_REQUESTS, ApiProblems.RATE_LIMITED,
+                        "Too many attempts. Try again shortly."));
+    }
+
     /** Anything unexpected: the details go to the log, never to the client. The app retries a 5xx. */
     @ExceptionHandler(Exception.class)
     ProblemDetail unexpected(Exception e) {
