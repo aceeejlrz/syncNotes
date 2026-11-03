@@ -52,7 +52,7 @@ public class SyncService {
         rejectDuplicateIds(request.changes());
         UUID deviceId = request.deviceId();
         // Cut by code points so the M4 copy title stays within its limit (section 8.4).
-        String deviceName = NoteLimits.truncate(request.deviceName(), NoteLimits.DEVICE_NAME_MAX);
+        String deviceName = NoteLimits.truncate(request.deviceName().replace("\0", ""), NoteLimits.DEVICE_NAME_MAX);
 
         // Lock first: a second push for this user waits here, so change numbers become visible
         // in order (9.3). The note SELECT below then sees every earlier push's committed rows.
@@ -63,7 +63,7 @@ public class SyncService {
         List<PushResultDto> results = new ArrayList<>(request.changes().size());
 
         for (ChangeDto change : request.changes()) {
-            Optional<String> invalid = tooLong(change);
+            Optional<String> invalid = invalidText(change);
             if (invalid.isPresent()) {
                 results.add(PushResultDto.rejected(change.id(), invalid.get()));
                 continue;
@@ -125,8 +125,15 @@ public class SyncService {
         return new IncomingChange(c.id(), c.baseVersions().toPerField(), c.title(), c.body(), c.pinned(), c.trashed());
     }
 
-    /** Lengths in code points, as PostgreSQL's char_length counts them (section 8.4). */
-    private static Optional<String> tooLong(ChangeDto c) {
+    /**
+     * Why this note can't be stored, if so (section 8.4). Lengths are in code points, as PostgreSQL's
+     * char_length counts them. PostgreSQL text can't hold U+0000: left in, one such note would fail
+     * its whole push on every retry.
+     */
+    private static Optional<String> invalidText(ChangeDto c) {
+        if ((c.title() != null && c.title().indexOf('\0') >= 0) || (c.body() != null && c.body().indexOf('\0') >= 0)) {
+            return Optional.of("Text contains a NUL character");
+        }
         if (c.title() != null && NoteLimits.length(c.title()) > NoteLimits.TITLE_MAX) {
             return Optional.of("Title is longer than " + NoteLimits.TITLE_MAX + " characters");
         }

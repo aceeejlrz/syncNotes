@@ -241,6 +241,42 @@ class SyncServiceTest {
         assertThat(copy.values().title()).endsWith(" (conflicted copy from " + emoji.repeat(60) + ")");
     }
 
+    /** PostgreSQL text can't hold U+0000. One such note must not fail its whole push on every retry. */
+    @Test
+    void aNulCharacterInANote_rejectsThatNote_andTheRestOfThePushApplies() {
+        UUID badTitle = UUID.randomUUID();
+        UUID badBody = UUID.randomUUID();
+        UUID fine = UUID.randomUUID();
+
+        PushResponse r = push(ALICE, PHONE, "Phone",
+                newNote(badTitle, "a\u0000b"),
+                change(badBody, 0, "t", "x\u0000y", false, false),
+                newNote(fine, "fine"));
+
+        assertThat(r.results()).extracting(PushResultDto::status)
+                .containsExactly(PushStatus.REJECTED, PushStatus.REJECTED, PushStatus.APPLIED);
+        assertThat(allNotes(ALICE)).extracting(NoteRow::id).containsExactly(fine);
+    }
+
+    @Test
+    void aNulCharacterInTheDeviceName_isRemoved_soAConflictedCopyStillSaves() {
+        seedNoteAt10(ALICE, "Groceries", "eggs");
+        push(ALICE, PHONE, "Phone", change(N, 10, null, "eggs, milk", null, null));
+
+        PushResultDto r = only(push(ALICE, TABLET, "Tab\u0000let", change(N, 10, null, "eggs, bread", null, null)));
+
+        assertThat(r.status()).isEqualTo(PushStatus.CONFLICT_COPY);
+        NoteRow copy = allNotes(ALICE).stream().filter(n -> !n.id().equals(N)).findFirst().orElseThrow();
+        assertThat(copy.values().title()).isEqualTo("Groceries (conflicted copy from Tablet)");
+    }
+
+    /** JSON can carry half of an emoji ("\ud83d"). It must not break the push either. */
+    @Test
+    void anUnpairedSurrogate_doesNotFailThePush() {
+        PushResultDto r = only(push(ALICE, PHONE, "Phone", newNote(N, "half \uD83D emoji")));
+        assertThat(r.status()).isIn(PushStatus.APPLIED, PushStatus.REJECTED);
+    }
+
     @Test
     void duplicateIdsInOnePush_areRejectedAsAWhole_andWriteNothing() {
         assertThatThrownBy(() -> push(ALICE, PHONE, "Phone", newNote(N, "one"), newNote(N, "two")))
