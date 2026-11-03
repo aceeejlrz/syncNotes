@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.6 done) | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.7 done) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -833,10 +833,10 @@ Design notes:
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| POST | `/api/v1/auth/register` | Public | Create an account, returns tokens |
+| POST | `/api/v1/auth/register` | Public | Create an account, returns tokens (201) |
 | POST | `/api/v1/auth/login` | Public | Returns tokens |
 | POST | `/api/v1/auth/refresh` | Refresh token in body | Returns a new token pair and revokes the old refresh token |
-| POST | `/api/v1/auth/logout` | Refresh token in body | Revokes the refresh token |
+| POST | `/api/v1/auth/logout` | Refresh token in body | Revokes the refresh token (204, also for a token that is unknown or already revoked) |
 | GET | `/api/v1/me` | Bearer | Current user id and email |
 | POST | `/api/v1/sync/push` | Bearer | Upload changes |
 | GET | `/api/v1/sync/pull?since={cursor}&limit={n}` | Bearer | Download changes after the cursor |
@@ -863,6 +863,8 @@ Design notes:
   "refreshToken": "hQ7fL2...base64url..."
 }
 ```
+
+**Refresh or logout** take `{ "refreshToken": "..." }`. Refresh returns the same shape as login, and the new token keeps the old one's device. **`GET /api/v1/me`** returns `{ "userId": "...", "email": "..." }`.
 
 **Push** (`POST /api/v1/sync/push`). Each change carries only the fields that are dirty on the device. A missing field means "not changed". `baseVersions` always carries all four fields: the version of each field the device last saw.
 
@@ -979,13 +981,15 @@ Codes: `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `TOKEN_INVALID`, `VALIDATION_FAILED
 | Changes per push | 1 to 50, no duplicate ids | 400 for the whole request |
 | `id`, `deviceId` | Valid UUIDs | 400 |
 | `baseVersions` | All four fields present, each 0 or more | 400 |
-| `title` | Up to 300 characters | `REJECTED` for that note |
-| `body` | Up to 100,000 characters | `REJECTED` for that note |
-| `deviceName` | Up to 60 characters | Truncated |
+| `title` | Up to 300 characters, no NUL (U+0000) | `REJECTED` for that note |
+| `body` | Up to 100,000 characters, no NUL (U+0000) | `REJECTED` for that note |
+| `deviceName` | Up to 60 characters | NULs removed, then truncated |
 | Pull `limit` | 1 to 500, default 200 | Clamped |
-| Password | At least 8 characters | 400 |
+| Email | Valid, up to 254 characters. Trimmed and lowercased before use | 400 |
+| Password, new account | At least 8 characters, at most 72 UTF-8 bytes (BCrypt's limit) | 400 |
+| Password, login | No rules: anything that doesn't match is a wrong password | 401 `INVALID_CREDENTIALS` |
 
-Character limits count Unicode code points, as PostgreSQL's `char_length` does, not Java's UTF-16 units: a title of 300 emoji is 300 characters. A device name is cut by code points too, so an emoji is never split.
+Character limits count Unicode code points, as PostgreSQL's `char_length` does, not Java's UTF-16 units: a title of 300 emoji is 300 characters. A device name is cut by code points too, so an emoji is never split. PostgreSQL text can't hold NUL, so a note containing one is `REJECTED` rather than failing its whole push on every retry.
 
 Every 400 is a Problem Details body with `code: VALIDATION_FAILED`, including Spring's own (malformed JSON, an invalid UUID, a non-numeric `since`). A negative `since` is also a 400.
 
@@ -1636,6 +1640,8 @@ sequenceDiagram
 - **Gotcha:** when encoding, pass `JwsHeader.with(MacAlgorithm.HS256).build()` in `JwtEncoderParameters`. The default header is RS256, which fails with a secret key.
 - Controllers read the user id from `jwt.getSubject()`. Every SQL statement filters by it. A correctly signed token whose subject isn't a UUID gets the same 401 `TOKEN_INVALID` as a bad signature, never a 500. So does a push for an account that no longer exists (the row lock finds no user). A pull for one simply returns an empty page, because pull never reads `users`.
 - A 401 carries `WWW-Authenticate: Bearer` and a Problem Details body with `code: TOKEN_INVALID`.
+- Rotation is one atomic `UPDATE ... RETURNING`, so of two concurrent refreshes with the same token exactly one wins. Each rotation also deletes that user's tokens past their expiry. Revoked ones stay until then, which keeps the table bounded and leaves reuse detection possible.
+- `AuthService` hashes before any transaction starts, so BCrypt never holds a database connection. Login checks a hash even for an unknown email, so timing doesn't reveal which emails have accounts.
 - Bucket4j: roughly 10 requests per minute per IP on login, register and refresh.
 
 **App**
@@ -1893,7 +1899,7 @@ gantt
 - [x] **2.4 Merge engine first (test-driven).** Write parameterized tests for M1–M10 and the §9.8 examples, then implement `MergeEngine` until they pass.
 - [x] **2.5 Repositories.** `UserRepository` (including the row lock), `NoteRepository` (find by ids, save, changed since) using `JdbcClient`.
 - [x] **2.6 Sync service and controller.** Push and pull (§9.5, §9.6), validation (§8.4), `ProblemDetail` errors.
-- [ ] **2.7 Auth.** Password encoder, `TokenService` (§10.4 gotcha), refresh token rotation, `AuthController`, `SecurityConfig`, `/api/v1/me`.
+- [x] **2.7 Auth.** Password encoder, `TokenService` (§10.4 gotcha), refresh token rotation, `AuthController`, `SecurityConfig`, `/api/v1/me`.
 - [ ] **2.8 Integration tests** with Testcontainers: register → push → pull round trip, pagination, change numbers strictly increase, two concurrent pushes for one user (two threads and a latch), cross-account isolation, token refresh and revocation.
 - [ ] **2.9 Rate limiting** on the auth endpoints.
 - [ ] **2.10 Deploy.** Dockerfile, Neon database, Fly.io app and secrets, health check (§14.4).

@@ -9,6 +9,23 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### PostgreSQL text can't hold NUL, and JSON can carry one
+`"\u0000"` is valid JSON and a valid Java string, but the driver refuses it. A note containing one
+passed every length check, then failed its whole push with a database error, on every retry. A
+new test showed this before the fix: such a note is now `REJECTED` and NULs are stripped from device
+names. An unpaired surrogate ("half an emoji") turned out to be harmless.
+
+### An unset `${PLACEHOLDER}` can survive as literal text
+Binding `jwt-secret: ${JWT_SECRET}` with the variable unset didn't fail with "could not resolve
+placeholder": `AuthProperties` received the literal text, `@NotBlank` passed, and base64 decoding
+failed on the `$` with a misleading message. The server did refuse to start, but only running it
+showed why. `JwtConfig` now checks for this and says `JWT_SECRET is not set`.
+
+### BCrypt's limit is 72 bytes, not characters
+Spring's `BCryptPasswordEncoder` throws on a longer password when encoding, which would be a 500
+on register, so register validates UTF-8 bytes first (18 emoji fit, 19 don't). `matches` doesn't
+throw, so an absurdly long password at login is just a wrong password.
+
 ### `jwt()` in MockMvc skips the decoder
 `SecurityMockMvcRequestPostProcessors.jwt()` puts a ready-made token into the security context
 without decoding it, so a wrong algorithm or key encoding would still pass. `SyncControllerTest`

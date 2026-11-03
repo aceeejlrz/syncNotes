@@ -13,6 +13,14 @@ Scratch space for the next change and open questions
   length checks with `NoteLimits.length`, not `String.length()`. Otherwise emoji-heavy text passes
   Java validation, violates PostgreSQL's `char_length` check, and the push rolls back forever.
   Add a service-level test: 61+ character device name, emoji title near the 300 limit.
+- [ ] **Decide before Phase 3: a lost refresh response signs the user out.** Rotation revokes the
+  old token before the response reaches the phone. If that response is lost (network drop), the
+  phone only holds a revoked token and the next refresh is a 401: session expired, sign in again.
+  No data is lost (notes stay and sync afterwards), but it could surprise on flaky networks. The
+  usual fix is a short grace period for the just-replaced token. Not in the blueprint; see section 10.2.
+- [ ] **Decide: the local dev signing key is committed** in `application-local.yml` (throwaway, but
+  section 10.5 says nothing secret in git). Keep it, or move it to the gitignored `.env`.
+- [ ] **2.10 deploy needs `JWT_SECRET`** set as a Fly.io secret (`openssl rand -base64 32`).
 - [ ] **2.11 CI must enforce R3.** `server.yml` should also run
   `python docs/sync_protocol_model.py` and
   `python docs/sync_protocol_model.py --check-vectors server/src/test/resources/merge-vectors.json`,
