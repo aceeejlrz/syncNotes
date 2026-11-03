@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
@@ -29,6 +31,12 @@ public class SecurityConfig {
                         .authenticationEntryPoint(tokenInvalid))
                 .exceptionHandling(e -> e.authenticationEntryPoint(tokenInvalid))
                 .build();
+    }
+
+    /** BCrypt today; stored hashes name their algorithm, so it can change later (section 10.1). */
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
     /** 401 with the standard WWW-Authenticate header plus a Problem Details body (section 8.3). */

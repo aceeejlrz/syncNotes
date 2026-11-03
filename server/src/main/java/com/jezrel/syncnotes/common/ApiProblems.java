@@ -10,6 +10,8 @@ import org.springframework.http.ProblemDetail;
 public final class ApiProblems {
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String TOKEN_INVALID = "TOKEN_INVALID";
+    public static final String EMAIL_TAKEN = "EMAIL_TAKEN";
+    public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
 
     private ApiProblems() {
     }

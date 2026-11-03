@@ -35,6 +35,9 @@ public class JwtConfig {
     }
 
     static SecretKey key(AuthProperties props) {
+        if (props.jwtSecret().startsWith("${")) {       // Spring leaves an unset placeholder as literal text
+            throw new IllegalStateException("JWT_SECRET is not set; generate one with: openssl rand -base64 32");
+        }
         byte[] bytes;
         try {
             bytes = Base64.getDecoder().decode(props.jwtSecret().strip());

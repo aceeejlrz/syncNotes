@@ -1,5 +1,8 @@
 package com.jezrel.syncnotes.user;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -15,13 +18,35 @@ public class UserRepository {
         this.jdbc = jdbc;
     }
 
-    /** Creates a user; {@code email} must already be normalized (lowercased) by the caller. */
-    public void create(UUID id, String email, String passwordHash) {
-        jdbc.sql("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)")
+    /**
+     * Creates a user; {@code email} must already be normalized (lowercased) by the caller.
+     *
+     * @return false if the email already has an account. ON CONFLICT also settles two concurrent
+     *     registrations, without an exception that would abort the caller's transaction
+     */
+    public boolean create(UUID id, String email, String passwordHash) {
+        return jdbc.sql("""
+                INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)
+                ON CONFLICT (email) DO NOTHING
+                """)
                 .param("id", id)
                 .param("email", email)
                 .param("hash", passwordHash)
-                .update();
+                .update() == 1;
+    }
+
+    public Optional<UserRow> findById(UUID id) {
+        return jdbc.sql("SELECT id, email, password_hash FROM users WHERE id = :id")
+                .param("id", id)
+                .query(UserRepository::mapUser)
+                .optional();
+    }
+
+    public Optional<UserRow> findByEmail(String email) {
+        return jdbc.sql("SELECT id, email, password_hash FROM users WHERE email = :email")
+                .param("email", email)
+                .query(UserRepository::mapUser)
+                .optional();
     }
 
     /**
@@ -49,5 +74,9 @@ public class UserRepository {
                 .param("v", syncVersion)
                 .param("id", userId)
                 .update();
+    }
+
+    private static UserRow mapUser(ResultSet rs, int rowNum) throws SQLException {
+        return new UserRow(rs.getObject("id", UUID.class), rs.getString("email"), rs.getString("password_hash"));
     }
 }

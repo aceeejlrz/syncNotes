@@ -1,5 +1,7 @@
 package com.jezrel.syncnotes.common;
 
+import com.jezrel.syncnotes.auth.EmailTakenException;
+import com.jezrel.syncnotes.auth.InvalidCredentialsException;
 import com.jezrel.syncnotes.user.UnknownUserException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -21,6 +23,19 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidRequestException.class)
     ProblemDetail invalidRequest(InvalidRequestException e) {
         return ApiProblems.of(HttpStatus.BAD_REQUEST, ApiProblems.VALIDATION_FAILED, e.getMessage());
+    }
+
+    @ExceptionHandler(EmailTakenException.class)
+    ProblemDetail emailTaken() {
+        return ApiProblems.of(HttpStatus.CONFLICT, ApiProblems.EMAIL_TAKEN, "An account with this email already exists.");
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    ResponseEntity<ProblemDetail> invalidCredentials() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
+                .body(ApiProblems.of(HttpStatus.UNAUTHORIZED, ApiProblems.INVALID_CREDENTIALS,
+                        "Invalid email or password."));
     }
 
     /** A signed token that can't be used is treated like a bad signature: sign in again. */

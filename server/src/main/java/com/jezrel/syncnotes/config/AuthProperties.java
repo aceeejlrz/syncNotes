@@ -14,5 +14,6 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties("syncnotes.auth")
 public record AuthProperties(
         @NotBlank String jwtSecret,
-        @DefaultValue("15m") Duration accessTokenTtl) {
+        @DefaultValue("15m") Duration accessTokenTtl,
+        @DefaultValue("30d") Duration refreshTokenTtl) {
 }

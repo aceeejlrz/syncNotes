@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class JwtConfigTest {
 
     static AuthProperties secret(String value) {
-        return new AuthProperties(value, Duration.ofMinutes(15));
+        return new AuthProperties(value, Duration.ofMinutes(15), Duration.ofDays(30));
     }
 
     @Test
@@ -19,6 +19,13 @@ class JwtConfigTest {
         String b64 = Base64.getEncoder().encodeToString(new byte[32]);
         assertThat(JwtConfig.key(secret(b64)).getAlgorithm()).isEqualTo("HmacSHA256");
         assertThat(JwtConfig.key(secret(b64)).getEncoded()).hasSize(32);
+    }
+
+    @Test
+    void anUnsetSecret_saysSo() {
+        assertThatThrownBy(() -> JwtConfig.key(secret("${JWT_SECRET}")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("JWT_SECRET is not set");
     }
 
     @Test

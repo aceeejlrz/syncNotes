@@ -1,11 +1,10 @@
 package com.jezrel.syncnotes.sync;
 
-import com.jezrel.syncnotes.common.TokenRejectedException;
+import com.jezrel.syncnotes.common.CurrentUser;
 import com.jezrel.syncnotes.sync.dto.PullResponse;
 import com.jezrel.syncnotes.sync.dto.PushRequest;
 import com.jezrel.syncnotes.sync.dto.PushResponse;
 import jakarta.validation.Valid;
-import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,25 +27,13 @@ public class SyncController {
 
     @PostMapping("/push")
     public PushResponse push(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody PushRequest request) {
-        return sync.push(userId(jwt), request);
+        return sync.push(CurrentUser.id(jwt), request);
     }
 
     @GetMapping("/pull")
     public PullResponse pull(@AuthenticationPrincipal Jwt jwt,
                              @RequestParam(defaultValue = "0") long since,
                              @RequestParam(defaultValue = "" + SyncService.PULL_DEFAULT) int limit) {
-        return sync.pull(userId(jwt), since, limit);
-    }
-
-    private static UUID userId(Jwt jwt) {
-        String subject = jwt.getSubject();
-        try {
-            if (subject != null) {
-                return UUID.fromString(subject);
-            }
-        } catch (IllegalArgumentException e) {
-            // fall through
-        }
-        throw new TokenRejectedException("Token subject is not a user id");
+        return sync.pull(CurrentUser.id(jwt), since, limit);
     }
 }
