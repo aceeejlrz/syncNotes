@@ -1,0 +1,7 @@
+# Only what the build needs. Above all, secrets stay out of the build context.
+*
+!.mvn/
+!mvnw
+!pom.xml
+!src/main/
+.mvn/wrapper/maven-wrapper.jar

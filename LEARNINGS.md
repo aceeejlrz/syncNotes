@@ -9,6 +9,14 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### Test an image at the memory it will really get
+At `--memory=256m` the default `MaxRAMPercentage=70` passed a normal sign-in, push and pull, then
+the kernel killed the process on the fourth 20 MB push: `oomKilled=true`, exit 137, and nothing in
+the application log. Heap plus metaspace and threads didn't fit, so `ExitOnOutOfMemoryError` never
+fired. Check `docker inspect` for the reason. Also check a test's evidence as well as its exit code:
+an early run "refused to start without a secret" only because the jar's filename was wrong, and
+another reported low memory because the load client had silently not run.
+
 ### Rate limits: the client's address and the bucket's name are the hard parts
 Behind a proxy `getRemoteAddr()` is the proxy, so every user would share one bucket; `Fly-Client-IP`
 holds the real client. `X-Forwarded-For` starts with whatever the client wrote. An IPv6 client

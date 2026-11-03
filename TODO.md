@@ -21,6 +21,14 @@ Scratch space for the next change and open questions
 - [ ] **Decide: the local dev signing key is committed** in `application-local.yml` (throwaway, but
   section 10.5 says nothing secret in git). Keep it, or move it to the gitignored `.env`.
 - [ ] **2.10 deploy needs `JWT_SECRET`** set as a Fly.io secret (`openssl rand -base64 32`).
+- [ ] **2.10: choose the machine size.** 512 MB is measured to handle everything tested (section
+  14.4). 256 MB needs the lighter JVM settings and can't serve the worst-case pull. Also set
+  `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=5` in `fly.toml` (section 14.4).
+- [ ] **Bound pull pages by size, not only by count.** One pull holds its whole page in memory, so
+  the worst case grows with `limit` (200 huge notes: 80 MB response, 424 MB peak). `limit=500` of
+  huge notes wasn't tested and would likely exhaust a 512 MB machine, and with exit-on-OOM that
+  restarts it. It needs an account with hundreds of near-limit notes. Fix: end a page early once it
+  passes a byte budget; `hasMore` already tells the app to continue, so the API doesn't change.
 - [ ] **2.10: check `Fly-Client-IP` can't be faked.** Fly's docs don't say the proxy overwrites a
   client-supplied value. On the live server, send 11 logins with a different made-up `Fly-Client-IP`
   each: the 11th must be a 429. If not, the limit can be bypassed: switch `ClientIp` to the
