@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.7 done) | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.8 done) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -972,7 +972,7 @@ Result statuses:
 }
 ```
 
-Codes: `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `TOKEN_INVALID`, `VALIDATION_FAILED`, `RATE_LIMITED`.
+Codes: `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `TOKEN_INVALID`, `VALIDATION_FAILED`, `RATE_LIMITED`, `INTERNAL_ERROR`. A 500 gives no internal details to the client; they go to the server log.
 
 ### 8.4 Validation and limits
 
@@ -1900,7 +1900,7 @@ gantt
 - [x] **2.5 Repositories.** `UserRepository` (including the row lock), `NoteRepository` (find by ids, save, changed since) using `JdbcClient`.
 - [x] **2.6 Sync service and controller.** Push and pull (§9.5, §9.6), validation (§8.4), `ProblemDetail` errors.
 - [x] **2.7 Auth.** Password encoder, `TokenService` (§10.4 gotcha), refresh token rotation, `AuthController`, `SecurityConfig`, `/api/v1/me`.
-- [ ] **2.8 Integration tests** with Testcontainers: register → push → pull round trip, pagination, change numbers strictly increase, two concurrent pushes for one user (two threads and a latch), cross-account isolation, token refresh and revocation.
+- [x] **2.8 Integration tests** with Testcontainers: register → push → pull round trip, pagination, change numbers strictly increase, two concurrent pushes for one user (two threads and a latch), cross-account isolation, token refresh and revocation.
 - [ ] **2.9 Rate limiting** on the auth endpoints.
 - [ ] **2.10 Deploy.** Dockerfile, Neon database, Fly.io app and secrets, health check (§14.4).
 - [ ] **2.11 Server CI** (`server.yml`, §14.5). Run `git update-index --chmod=+x server/mvnw`.

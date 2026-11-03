@@ -9,6 +9,19 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### Prove the concurrency test can fail
+The test that writers and a cursor-following reader run together passed first time, which proves
+little. Two temporary mutants showed it has teeth. Removing `FOR UPDATE` made pushes collide on the
+unique index. Allocating numbers in their own committed statement (the design the row lock exists
+to avoid) let them become visible out of order: the reader expected 316, got 326, and would have
+lost those notes forever. That is section 9.3's reason for the lock, seen happening.
+
+### MockMvc can't show what a client gets on a 500
+MockMvc rethrows unhandled exceptions; only real Tomcat runs the error dispatch. `SyncEndToEndTest`
+uses a real port and `java.net.http`, which showed that a 500 returned Spring's default error body
+instead of Problem Details. A catch-all `@ExceptionHandler` now returns `INTERNAL_ERROR` and logs
+the details. The largest allowed push (50 notes of 100,000 emoji, about 20 MB) also passes.
+
 ### PostgreSQL text can't hold NUL, and JSON can carry one
 `"\u0000"` is valid JSON and a valid Java string, but the driver refuses it. A note containing one
 passed every length check, then failed its whole push with a database error, on every retry. A
