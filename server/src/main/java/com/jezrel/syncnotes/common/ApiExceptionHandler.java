@@ -47,6 +47,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                         "Missing, invalid or expired access token."));
     }
 
+    /** Anything unexpected: the details go to the log, never to the client. The app retries a 5xx. */
+    @ExceptionHandler(Exception.class)
+    ProblemDetail unexpected(Exception e) {
+        logger.error("Unhandled exception", e);
+        return ApiProblems.of(HttpStatus.INTERNAL_SERVER_ERROR, ApiProblems.INTERNAL_ERROR,
+                "Something went wrong on the server. Try again later.");
+    }
+
     @Override
     protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
                                                              HttpStatusCode statusCode, WebRequest request) {
