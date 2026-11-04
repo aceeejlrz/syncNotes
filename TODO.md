@@ -15,8 +15,9 @@ Scratch space for the next change and open questions
   phone only holds a revoked token and the next refresh is a 401: session expired, sign in again.
   No data is lost (notes stay and sync afterwards), but it could surprise on flaky networks. The
   usual fix is a short grace period for the just-replaced token. Not in the blueprint; see section 10.2.
-- [ ] **Decide: the local dev signing key is committed** in `application-local.yml` (throwaway, but
-  section 10.5 says nothing secret in git). Keep it, or move it to the gitignored `.env`.
+- [x] **The local dev signing key moved to `server/.env`** (gitignored; see `.env.example`). The
+  old key stays readable in git history, so it must never be used for anything, and the new one
+  is different. The test key stays committed: CI needs it, and it only signs test tokens.
 - [ ] **2.10 deploy needs `JWT_SECRET`** set as a Fly.io secret (`openssl rand -base64 32`).
 - [ ] **2.10: choose the machine size.** 512 MB is measured to handle everything tested (section
   14.4). 256 MB needs the lighter JVM settings and can't serve the worst-case pull. Also set
@@ -34,9 +35,8 @@ Scratch space for the next change and open questions
   ends the session; 429, 5xx and network errors must keep it (section 10.4). Check what the sync does
   when the authenticator returns null (section 9.10 `e.code() == 401 -> AuthFailed`). Add a
   MockWebServer test for a 429 on refresh.
-- [ ] **2.11: confirm the first `server` CI run is green**, then tick the step. `server.yml` is
-  written and linted, but only GitHub can run it, and the repo is private so it has to be read on
-  the Actions page. It also enforces R3 (the model and `--check-vectors`).
+- [x] **2.11: the first `server` CI run was green** (commit `7902045`), including the `model` job
+  that enforces R3.
 
 ## Now (Phase 0)
 

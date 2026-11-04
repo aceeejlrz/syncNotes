@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.9 and 2.12 done; Dockerfile written for 2.10; workflow written for 2.11, awaiting its first run) | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (all done except 2.10; its Dockerfile is written) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -1636,7 +1636,7 @@ sequenceDiagram
 **Server**
 
 - `SecurityConfig`: stateless sessions, CSRF off (no cookies are used), `/api/v1/auth/**` and `/actuator/health` public, everything else authenticated, `oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))`.
-- `JwtConfig`: one 256-bit secret from the `JWT_SECRET` environment variable, as base64 (`openssl rand -base64 32`). The server refuses to start if it is missing, isn't base64, or decodes to fewer than 32 bytes. The `local` profile and the tests carry their own throwaway keys. Decoder: `NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build()`. Encoder: `new NimbusJwtEncoder(new ImmutableSecret<>(key))`.
+- `JwtConfig`: one 256-bit secret from the `JWT_SECRET` environment variable, as base64 (`openssl rand -base64 32`). The server refuses to start if it is missing, isn't base64, or decodes to fewer than 32 bytes. Locally it comes from `server/.env`, which git ignores (§14.3). The tests carry their own throwaway key. Decoder: `NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build()`. Encoder: `new NimbusJwtEncoder(new ImmutableSecret<>(key))`.
 - **Gotcha:** when encoding, pass `JwsHeader.with(MacAlgorithm.HS256).build()` in `JwtEncoderParameters`. The default header is RS256, which fails with a secret key.
 - Controllers read the user id from `jwt.getSubject()`. Every SQL statement filters by it. A correctly signed token whose subject isn't a UUID gets the same 401 `TOKEN_INVALID` as a bad signature, never a 500. So does a push for an account that no longer exists (the row lock finds no user). A pull for one simply returns an empty page, because pull never reads `users`.
 - A 401 carries `WWW-Authenticate: Bearer` and a Problem Details body with `code: TOKEN_INVALID`.
@@ -1904,7 +1904,7 @@ gantt
 - [x] **2.8 Integration tests** with Testcontainers: register → push → pull round trip, pagination, change numbers strictly increase, two concurrent pushes for one user (two threads and a latch), cross-account isolation, token refresh and revocation.
 - [x] **2.9 Rate limiting** on the auth endpoints.
 - [ ] **2.10 Deploy.** Dockerfile, Neon database, Fly.io app and secrets, health check (§14.4).
-- [ ] **2.11 Server CI** (`server.yml`, §14.5). Run `git update-index --chmod=+x server/mvnw`.
+- [x] **2.11 Server CI** (`server.yml`, §14.5). Run `git update-index --chmod=+x server/mvnw`.
 - [x] **2.12 `docs/api.http`** with runnable requests for every endpoint, including a manual conflict (two pushes with the same base).
 
 **Exit criteria:** all tests green in CI. The live API handles register, push and pull from `api.http`, and a manual conflict produces a conflicted copy.
@@ -2048,6 +2048,7 @@ Reference it from the manifest with `android:networkSecurityConfig="@xml/network
 
 ### 14.3 Local backend
 
+- First time: `cp .env.example .env` in `server/`, then set `JWT_SECRET` to the output of `openssl rand -base64 32`. Without it the server says `JWT_SECRET is not set` and stops. Only the `local` profile reads `.env`, and from the working directory, so run from `server/`.
 - `docker compose up -d` in `server/` starts PostgreSQL. With Docker Compose Support, `./mvnw spring-boot:run` starts it automatically.
 - Run with the `local` profile. Two emulators can use the same local server at the same time, which is exactly what the conflict matrix needs.
 

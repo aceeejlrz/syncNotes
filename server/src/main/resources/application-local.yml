@@ -1,12 +1,14 @@
 # Local development profile: ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+spring:
+  config:
+    # JWT_SECRET comes from server/.env, which git ignores; see .env.example (section 14.3).
+    import: optional:file:.env[.properties]
+
 syncnotes:
   auth:
     # Short-lived access tokens to exercise the silent refresh (conflict matrix C11).
     # Bound by AuthProperties; issuing tokens with it is step 2.7.
     access-token-ttl: 1m
-    # Development-only signing key; never used outside the local profile.
-    # Production sets JWT_SECRET as a Fly.io secret (section 14).
-    jwt-secret: 1wp3nXcOJkz6KAdoR7qnY84k0kt4q3GDf0NVP8vMrIA=
 
 server:
   port: 8090   # 8080 is often taken locally (e.g. Jenkins); see ARCHITECTURE.md section 14.1
