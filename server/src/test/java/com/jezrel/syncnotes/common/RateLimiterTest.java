@@ -36,7 +36,7 @@ class RateLimiterTest {
 
     final TestClock clock = new TestClock();
     final RateLimiter limiter = new RateLimiter(
-            new AuthProperties("unused", Duration.ofMinutes(15), Duration.ofDays(30), 10), clock);
+            new AuthProperties("unused", Duration.ofMinutes(15), Duration.ofDays(30), 10, Duration.ofSeconds(30)), clock);
 
     void use(int times, String scope, String client) {
         for (int i = 0; i < times; i++) {

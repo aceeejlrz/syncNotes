@@ -16,5 +16,6 @@ public record AuthProperties(
         @NotBlank String jwtSecret,
         @DefaultValue("15m") Duration accessTokenTtl,
         @DefaultValue("30d") Duration refreshTokenTtl,
-        @DefaultValue("10") int rateLimitPerMinute) {
+        @DefaultValue("10") int rateLimitPerMinute,
+        @DefaultValue("30s") Duration refreshTokenGrace) {
 }

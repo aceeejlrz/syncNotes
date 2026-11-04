@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class JwtConfigTest {
 
     static AuthProperties secret(String value) {
-        return new AuthProperties(value, Duration.ofMinutes(15), Duration.ofDays(30), 10);
+        return new AuthProperties(value, Duration.ofMinutes(15), Duration.ofDays(30), 10, Duration.ofSeconds(30));
     }
 
     @Test

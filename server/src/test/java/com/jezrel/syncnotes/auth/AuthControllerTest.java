@@ -99,6 +99,10 @@ class AuthControllerTest {
         return jdbc.sql("SELECT count(*) FROM refresh_tokens").query(Long.class).single();
     }
 
+    long liveTokens() {
+        return jdbc.sql("SELECT count(*) FROM refresh_tokens WHERE revoked_at IS NULL").query(Long.class).single();
+    }
+
     // ---- register -----------------------------------------------------------------------------
 
     @Test
@@ -238,7 +242,7 @@ class AuthControllerTest {
     // ---- refresh ------------------------------------------------------------------------------
 
     @Test
-    void refresh_returnsANewPair_andRevokesTheOldToken() throws Exception {
+    void refresh_returnsANewPair_andOnlyTheNewTokenStaysLive() throws Exception {
         String first = registered("you@example.com");
 
         ResultActions r = postJson("refresh", refreshBody(first))
@@ -248,10 +252,112 @@ class AuthControllerTest {
         assertThat(second).isNotEqualTo(first);
         me(field(r, "accessToken")).andExpect(status().isOk());
 
-        postJson("refresh", refreshBody(first))                                // the old one is spent
+        assertThat(liveTokens()).isEqualTo(1);
+        postJson("refresh", refreshBody(second)).andExpect(status().isOk());   // the new one works
+    }
+
+    // ---- grace period for a lost response (section 10.2) -----------------------------------------
+
+    /** The response to a refresh is lost: the phone only has the old token, and retries with it. */
+    @Test
+    void aLostResponse_canBeRetriedWithTheOldToken_andTheLostTokenStopsWorking() throws Exception {
+        String old = registered("you@example.com");
+        String lost = field(postJson("refresh", refreshBody(old)).andExpect(status().isOk()), "refreshToken");
+
+        ResultActions retry = postJson("refresh", refreshBody(old)).andExpect(status().isOk());
+        String current = field(retry, "refreshToken");
+        me(field(retry, "accessToken")).andExpect(status().isOk());
+
+        assertThat(current).isNotEqualTo(lost);
+        assertThat(liveTokens()).isEqualTo(1);
+        postJson("refresh", refreshBody(lost))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("TOKEN_INVALID"));
-        postJson("refresh", refreshBody(second)).andExpect(status().isOk());   // the new one works
+        postJson("refresh", refreshBody(current)).andExpect(status().isOk());
+    }
+
+    /** The replacement was used, so the phone did get it. The old token is now suspicious. */
+    @Test
+    void theOldToken_isRefused_onceItsReplacementWasUsed() throws Exception {
+        String first = registered("you@example.com");
+        String second = field(postJson("refresh", refreshBody(first)), "refreshToken");
+        String third = field(postJson("refresh", refreshBody(second)).andExpect(status().isOk()), "refreshToken");
+
+        postJson("refresh", refreshBody(first))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("TOKEN_INVALID"));
+        postJson("refresh", refreshBody(third)).andExpect(status().isOk());    // and it harms nothing
+    }
+
+    @Test
+    void afterTheGracePeriod_theOldTokenIsRefused_andTheReplacementStillWorks() throws Exception {
+        String old = registered("you@example.com");
+        String replacement = field(postJson("refresh", refreshBody(old)), "refreshToken");
+        jdbc.sql("UPDATE refresh_tokens SET revoked_at = now() - interval '31 seconds' WHERE replaced_by IS NOT NULL")
+                .update();
+
+        postJson("refresh", refreshBody(old)).andExpect(status().isUnauthorized());
+        postJson("refresh", refreshBody(replacement)).andExpect(status().isOk());
+    }
+
+    @Test
+    void justInsideTheGracePeriod_theRetryIsAccepted() throws Exception {
+        String old = registered("you@example.com");
+        postJson("refresh", refreshBody(old));
+        jdbc.sql("UPDATE refresh_tokens SET revoked_at = now() - interval '25 seconds' WHERE replaced_by IS NOT NULL")
+                .update();
+
+        postJson("refresh", refreshBody(old)).andExpect(status().isOk());
+    }
+
+    @Test
+    void aRetry_doesNotExtendTheGracePeriod() throws Exception {
+        String old = registered("you@example.com");
+        postJson("refresh", refreshBody(old));
+        jdbc.sql("UPDATE refresh_tokens SET revoked_at = now() - interval '20 seconds' WHERE replaced_by IS NOT NULL")
+                .update();
+
+        postJson("refresh", refreshBody(old)).andExpect(status().isOk());
+
+        Double age = jdbc.sql("""
+                SELECT extract(epoch FROM now() - revoked_at)::float8 FROM refresh_tokens
+                WHERE created_at = (SELECT min(created_at) FROM refresh_tokens)
+                """).query(Double.class).single();
+        assertThat(age).isGreaterThan(19);
+    }
+
+    /** Only a rotation gives a grace period: signing out is final, at once. */
+    @Test
+    void aLoggedOutToken_getsNoGracePeriod() throws Exception {
+        String token = registered("you@example.com");
+        postJson("logout", refreshBody(token)).andExpect(status().isNoContent());
+        postJson("refresh", refreshBody(token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("TOKEN_INVALID"));
+    }
+
+    /** Signing out while holding only the old token must also end the replacement that got lost. */
+    @Test
+    void loggingOutWithTheOldToken_endsTheLostReplacementToo() throws Exception {
+        String old = registered("you@example.com");
+        String lost = field(postJson("refresh", refreshBody(old)), "refreshToken");
+
+        postJson("logout", refreshBody(old)).andExpect(status().isNoContent());
+
+        assertThat(liveTokens()).isZero();
+        postJson("refresh", refreshBody(lost)).andExpect(status().isUnauthorized());
+        postJson("refresh", refreshBody(old)).andExpect(status().isUnauthorized());
+    }
+
+    /** Logging out with the replacement ends the chain: the old token can't bring it back. */
+    @Test
+    void afterLoggingOutWithTheReplacement_theOldTokenIsRefused() throws Exception {
+        String old = registered("you@example.com");
+        String replacement = field(postJson("refresh", refreshBody(old)), "refreshToken");
+
+        postJson("logout", refreshBody(replacement)).andExpect(status().isNoContent());
+
+        postJson("refresh", refreshBody(old)).andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -298,9 +404,9 @@ class AuthControllerTest {
         postJson("refresh", refreshBody(other)).andExpect(status().isOk());    // another user's are untouched
     }
 
-    /** Two requests with the same token: exactly one gets the new pair. */
+    /** The same token at once: they run one at a time, and only the last one's token stays live. */
     @Test
-    void twoConcurrentRefreshes_ofOneToken_onlyOneWins() throws Exception {
+    void concurrentRefreshes_ofOneToken_leaveExactlyOneLiveToken() throws Exception {
         String token = registered("you@example.com");
         CountDownLatch start = new CountDownLatch(1);
         List<CompletableFuture<Integer>> calls = new ArrayList<>();
@@ -319,8 +425,9 @@ class AuthControllerTest {
         for (CompletableFuture<Integer> call : calls) {
             statuses.add(call.get(30, TimeUnit.SECONDS));
         }
-        assertThat(statuses).containsOnlyOnce(200).containsOnly(200, 401);
-        assertThat(tokenCount()).isEqualTo(2);
+        assertThat(statuses).containsOnly(200);                                // all inside the grace period
+        assertThat(tokenCount()).isEqualTo(9);
+        assertThat(liveTokens()).isEqualTo(1);
     }
 
     @Test

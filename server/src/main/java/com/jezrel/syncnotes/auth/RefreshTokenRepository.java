@@ -12,8 +12,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class RefreshTokenRepository {
 
-    /** Who a revoked token belonged to. */
-    public record Owner(UUID userId, UUID deviceId) {
+    /** The columns a rotation decides on. {@code replacedBy} is set only by a rotation. */
+    public record Row(UUID id, UUID userId, UUID deviceId, Instant expiresAt, Instant revokedAt, UUID replacedBy) {
     }
 
     private final JdbcClient jdbc;
@@ -22,12 +22,12 @@ public class RefreshTokenRepository {
         this.jdbc = jdbc;
     }
 
-    public void insert(UUID userId, String tokenHash, UUID deviceId, Instant expiresAt) {
+    public void insert(UUID id, UUID userId, String tokenHash, UUID deviceId, Instant expiresAt) {
         jdbc.sql("""
                 INSERT INTO refresh_tokens (id, user_id, token_hash, device_id, expires_at)
                 VALUES (:id, :userId, :hash, :deviceId, :expiresAt)
                 """)
-                .param("id", UUID.randomUUID())
+                .param("id", id)
                 .param("userId", userId)
                 .param("hash", tokenHash)
                 .param("deviceId", deviceId)
@@ -36,20 +36,50 @@ public class RefreshTokenRepository {
     }
 
     /**
-     * Revokes the token if it is still usable and says whose it was. One atomic statement: of two
-     * concurrent calls with the same token, the second waits for the first and then matches nothing.
+     * Finds a token and locks its row until the transaction ends, so concurrent calls with the same
+     * token run one after another, and each sees what the one before it did.
      */
-    public Optional<Owner> revokeIfActive(String tokenHash, Instant now) {
+    public Optional<Row> lockByHash(String tokenHash) {
         return jdbc.sql("""
-                UPDATE refresh_tokens SET revoked_at = :now
-                WHERE token_hash = :hash AND revoked_at IS NULL AND expires_at > :now
-                RETURNING user_id, device_id
+                SELECT id, user_id, device_id, expires_at, revoked_at, replaced_by
+                FROM refresh_tokens WHERE token_hash = :hash FOR UPDATE
                 """)
                 .param("hash", tokenHash)
-                .param("now", utc(now))
-                .query((rs, rowNum) -> new Owner(rs.getObject("user_id", UUID.class),
-                        rs.getObject("device_id", UUID.class)))
+                .query((rs, rowNum) -> {
+                    OffsetDateTime revokedAt = rs.getObject("revoked_at", OffsetDateTime.class);
+                    return new Row(rs.getObject("id", UUID.class), rs.getObject("user_id", UUID.class),
+                            rs.getObject("device_id", UUID.class),
+                            rs.getObject("expires_at", OffsetDateTime.class).toInstant(),
+                            revokedAt == null ? null : revokedAt.toInstant(),
+                            rs.getObject("replaced_by", UUID.class));
+                })
                 .optional();
+    }
+
+    /** Records the replacement. An earlier revocation time stays, so a retry can't extend the grace. */
+    public void markReplaced(UUID id, UUID replacedBy, Instant now) {
+        jdbc.sql("""
+                UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, :now), replaced_by = :replacedBy
+                WHERE id = :id
+                """)
+                .param("id", id)
+                .param("replacedBy", replacedBy)
+                .param("now", utc(now))
+                .update();
+    }
+
+    /** @return false if the token was already revoked */
+    public boolean revokeIfActive(UUID id, Instant now) {
+        return jdbc.sql("UPDATE refresh_tokens SET revoked_at = :now WHERE id = :id AND revoked_at IS NULL")
+                .param("id", id)
+                .param("now", utc(now))
+                .update() == 1;
+    }
+
+    public void clearReplacedBy(UUID id) {
+        jdbc.sql("UPDATE refresh_tokens SET replaced_by = NULL WHERE id = :id")
+                .param("id", id)
+                .update();
     }
 
     /**

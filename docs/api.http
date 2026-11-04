@@ -161,7 +161,7 @@ Content-Type: application/json
 GET {{baseUrl}}/api/v1/sync/pull?since=abc
 Authorization: Bearer {{login.response.body.$.accessToken}}
 
-### A new access token and refresh token. The old refresh token stops working.
+### A new access token and refresh token, which replaces the old refresh token.
 # Expect: 200
 # @name refresh
 POST {{baseUrl}}/api/v1/auth/refresh
@@ -171,13 +171,25 @@ Content-Type: application/json
   "refreshToken": "{{login.response.body.$.refreshToken}}"
 }
 
-### Using the old refresh token again.
-# Expect: 401 TOKEN_INVALID
+### Pretend that response was lost: retry with the old token. This works for 30 seconds after the
+# refresh above, and only until the new token is used. Later it's a 401 TOKEN_INVALID, so sign in
+# again from "Sign in" and repeat these requests.
+# Expect: 200
+# @name retry
 POST {{baseUrl}}/api/v1/auth/refresh
 Content-Type: application/json
 
 {
   "refreshToken": "{{login.response.body.$.refreshToken}}"
+}
+
+### The retry cancelled the token that was "lost", so it no longer works.
+# Expect: 401 TOKEN_INVALID
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh.response.body.$.refreshToken}}"
 }
 
 ### Sign out: revokes the refresh token. No response body.
@@ -186,14 +198,14 @@ POST {{baseUrl}}/api/v1/auth/logout
 Content-Type: application/json
 
 {
-  "refreshToken": "{{refresh.response.body.$.refreshToken}}"
+  "refreshToken": "{{retry.response.body.$.refreshToken}}"
 }
 
-### That refresh token no longer works either.
+### That refresh token no longer works either. Signing out has no grace period.
 # Expect: 401 TOKEN_INVALID
 POST {{baseUrl}}/api/v1/auth/refresh
 Content-Type: application/json
 
 {
-  "refreshToken": "{{refresh.response.body.$.refreshToken}}"
+  "refreshToken": "{{retry.response.body.$.refreshToken}}"
 }
