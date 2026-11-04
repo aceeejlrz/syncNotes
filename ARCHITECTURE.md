@@ -44,7 +44,7 @@ Update this table at the end of each phase.
 |---|---|---|---|
 | 0. Foundation | Sep 28 – Oct 4 | Done (merged to main) | — |
 | 1. Offline notes app | Oct 5 – Oct 18 | Code complete; awaiting on-device check of exit criteria | `v0.1-offline` |
-| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.9 done; Dockerfile written for 2.10) | `v0.2-backend` |
+| 2. Backend | Oct 19 – Nov 1 | In progress (2.1–2.9 and 2.12 done; Dockerfile written for 2.10; workflow written for 2.11, awaiting its first run) | `v0.2-backend` |
 | 3. Accounts on Android | Nov 2 – Nov 8 | Not started | `v0.3-auth` |
 | 4. Sync engine | Nov 9 – Nov 29 | Not started | `v0.4-sync` |
 | 5. Hardening | Nov 30 – Dec 6 | Not started | `v0.5-rc` |
@@ -1905,7 +1905,7 @@ gantt
 - [x] **2.9 Rate limiting** on the auth endpoints.
 - [ ] **2.10 Deploy.** Dockerfile, Neon database, Fly.io app and secrets, health check (§14.4).
 - [ ] **2.11 Server CI** (`server.yml`, §14.5). Run `git update-index --chmod=+x server/mvnw`.
-- [ ] **2.12 `docs/api.http`** with runnable requests for every endpoint, including a manual conflict (two pushes with the same base).
+- [x] **2.12 `docs/api.http`** with runnable requests for every endpoint, including a manual conflict (two pushes with the same base).
 
 **Exit criteria:** all tests green in CI. The live API handles register, push and pull from `api.http`, and a manual conflict produces a conflicted copy.
 **Tag:** `v0.2-backend`
@@ -2088,18 +2088,29 @@ jobs:
 name: server
 on:
   push:
-    paths: ["server/**", ".github/workflows/server.yml"]
+    paths: ["server/**", "docs/sync_protocol_model.py", "docs/api.http", ".github/workflows/server.yml"]
   pull_request:
-    paths: ["server/**"]
+    paths: ["server/**", "docs/sync_protocol_model.py", "docs/api.http"]
 jobs:
+  # The sync rules (R3): the model must pass, and the merge vectors the Java tests replay must be
+  # what the model produces today, so a model change that wasn't re-exported fails here.
+  model:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: python docs/sync_protocol_model.py
+      - run: python docs/sync_protocol_model.py --check-vectors server/src/test/resources/merge-vectors.json
   verify:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -2107,7 +2118,7 @@ jobs:
       - run: ./mvnw -B verify
 ```
 
-Testcontainers works on GitHub's Ubuntu runners without extra setup. Bump the action versions to the latest majors when you set this up.
+Testcontainers works on GitHub's Ubuntu runners without extra setup. The `model` job enforces R3: the sync model must pass, and the merge vectors the Java tests replay must be what it produces today. `docs/api.http` is a trigger because `ApiHttpFileTest` runs that file against the server.
 
 ---
 

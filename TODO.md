@@ -8,11 +8,8 @@ Scratch space for the next change and open questions
 - [x] **Docker verified.** 2.2 (compose PostgreSQL + local profile on 8090) and 2.3 (Flyway
   applies `V1__init.sql`) pass; 2.5 repository and row-lock tests run against PostgreSQL 17.
   Run the server suite with `cd server && ./mvnw test` (JAVA_HOME = JDK 25, Docker running).
-- [x] **2.6 obligations to MergeEngine.** Done: `NoteLimits.truncate`, code-point checks, and `SyncServiceTest` covers both. Before calling the engine, cut `deviceName` to 60
-  characters *by code points* (a plain `substring` can split an emoji), and do the `REJECTED`
-  length checks with `NoteLimits.length`, not `String.length()`. Otherwise emoji-heavy text passes
-  Java validation, violates PostgreSQL's `char_length` check, and the push rolls back forever.
-  Add a service-level test: 61+ character device name, emoji title near the 300 limit.
+- [x] **2.6 obligations to MergeEngine.** Done: `NoteLimits.truncate`, code-point checks, and
+  `SyncServiceTest` covers both.
 - [ ] **Decide before Phase 3: a lost refresh response signs the user out.** Rotation revokes the
   old token before the response reaches the phone. If that response is lost (network drop), the
   phone only holds a revoked token and the next refresh is a 401: session expired, sign in again.
@@ -37,10 +34,9 @@ Scratch space for the next change and open questions
   ends the session; 429, 5xx and network errors must keep it (section 10.4). Check what the sync does
   when the authenticator returns null (section 9.10 `e.code() == 401 -> AuthFailed`). Add a
   MockWebServer test for a 429 on refresh.
-- [ ] **2.11 CI must enforce R3.** `server.yml` should also run
-  `python docs/sync_protocol_model.py` and
-  `python docs/sync_protocol_model.py --check-vectors server/src/test/resources/merge-vectors.json`,
-  so a model change that wasn't re-exported fails CI instead of relying on memory.
+- [ ] **2.11: confirm the first `server` CI run is green**, then tick the step. `server.yml` is
+  written and linted, but only GitHub can run it, and the repo is private so it has to be read on
+  the Actions page. It also enforces R3 (the model and `--check-vectors`).
 
 ## Now (Phase 0)
 

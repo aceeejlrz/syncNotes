@@ -9,6 +9,14 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### A request file can be a test
+`docs/api.http` states what each request should return, and `ApiHttpFileTest` runs the file from top
+to bottom against the real server and compares. So the file can't drift from the API, and CI says so
+if it does. The test reads REST Client's syntax itself, so it proves the requests and expectations,
+not the extension. REST Client's documented reference needs `$.`:
+`{{login.response.body.$.accessToken}}`. And a second `###` line starts a new request, so a longer
+description continues with `#`.
+
 ### Test an image at the memory it will really get
 At `--memory=256m` the default `MaxRAMPercentage=70` passed a normal sign-in, push and pull, then
 the kernel killed the process on the fourth 20 MB push: `oomKilled=true`, exit 137, and nothing in
