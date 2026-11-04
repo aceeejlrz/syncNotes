@@ -1,0 +1,199 @@
+# Runnable requests for every SyncNotes endpoint (ARCHITECTURE.md section 8).
+# Open in VS Code with the REST Client extension (humao.rest-client) and click "Send Request".
+#
+# Send them from top to bottom: later requests use tokens from earlier ones.
+# "Expect" is what each request returns on a new account.
+#
+# To start clean, change @email. Version numbers start again at 1 for each account, so the base
+# versions below only fit a new one.
+# Login, register and refresh allow 10 requests per minute each, then answer 429 with Retry-After.
+
+# Local: cd server && ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+# Live: replace with the https://... address of the Fly.io app.
+@baseUrl = http://localhost:8090
+@email = demo1@example.com
+@password = correct horse
+@phone = 0f8fad5b-d9cb-469f-a165-70867728950e
+@tablet = 6ba7b810-9dad-41d1-80b4-00c04fd430c8
+@note = 7c9e6679-7425-40de-944b-e07fc1f90ae7
+
+### Health check. Public.
+# Expect: 200
+GET {{baseUrl}}/actuator/health
+
+### Create an account. A second try with the same email gets 409 EMAIL_TAKEN.
+# Expect: 201
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "deviceId": "{{phone}}"
+}
+
+### Sign in. The requests below use the tokens this returns.
+# Expect: 200
+# @name login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}",
+  "deviceId": "{{phone}}"
+}
+
+### A wrong password gets the same answer as an unknown email.
+# Expect: 401 INVALID_CREDENTIALS
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "not the password",
+  "deviceId": "{{phone}}"
+}
+
+### Who am I?
+# Expect: 200
+GET {{baseUrl}}/api/v1/me
+Authorization: Bearer {{login.response.body.$.accessToken}}
+
+### No token.
+# Expect: 401 TOKEN_INVALID
+GET {{baseUrl}}/api/v1/me
+
+### Create a note from the phone. It becomes version 1.
+# Expect: 200 APPLIED
+POST {{baseUrl}}/api/v1/sync/push
+Authorization: Bearer {{login.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "deviceId": "{{phone}}",
+  "deviceName": "Phone",
+  "changes": [
+    {
+      "id": "{{note}}",
+      "baseVersions": { "title": 0, "body": 0, "pinned": 0, "trashed": 0 },
+      "createdAt": "2026-11-03T12:00:00Z",
+      "title": "Groceries",
+      "body": "eggs",
+      "pinned": false,
+      "trashed": false
+    }
+  ]
+}
+
+### Download everything: the note, nextCursor 1, hasMore false.
+# Expect: 200
+GET {{baseUrl}}/api/v1/sync/pull?since=0&limit=200
+Authorization: Bearer {{login.response.body.$.accessToken}}
+
+### Manual conflict, step 1: the phone edits the body from version 1. The note becomes version 2.
+# Expect: 200 APPLIED
+POST {{baseUrl}}/api/v1/sync/push
+Authorization: Bearer {{login.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "deviceId": "{{phone}}",
+  "deviceName": "Phone",
+  "changes": [
+    {
+      "id": "{{note}}",
+      "baseVersions": { "title": 1, "body": 1, "pinned": 1, "trashed": 1 },
+      "createdAt": "2026-11-03T12:00:00Z",
+      "body": "eggs, milk"
+    }
+  ]
+}
+
+### Manual conflict, step 2: the tablet edits the same body, also from version 1.
+# The server keeps the phone's text and saves the tablet's in a conflicted copy, version 3.
+# Expect: 200 CONFLICT_COPY
+POST {{baseUrl}}/api/v1/sync/push
+Authorization: Bearer {{login.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "deviceId": "{{tablet}}",
+  "deviceName": "Tablet",
+  "changes": [
+    {
+      "id": "{{note}}",
+      "baseVersions": { "title": 1, "body": 1, "pinned": 1, "trashed": 1 },
+      "createdAt": "2026-11-03T12:00:00Z",
+      "body": "eggs, bread"
+    }
+  ]
+}
+
+### Manual conflict, step 3: the copy arrives on the next pull.
+# Its title says where it came from and its body is "eggs, bread".
+# Expect: 200 Groceries (conflicted copy from Tablet)
+GET {{baseUrl}}/api/v1/sync/pull?since=2&limit=200
+Authorization: Bearer {{login.response.body.$.accessToken}}
+
+### Different fields merge cleanly: the tablet renames the note, still from version 1, and the
+# phone's body stays. The response has both.
+# Expect: 200 eggs, milk
+POST {{baseUrl}}/api/v1/sync/push
+Authorization: Bearer {{login.response.body.$.accessToken}}
+Content-Type: application/json
+
+{
+  "deviceId": "{{tablet}}",
+  "deviceName": "Tablet",
+  "changes": [
+    {
+      "id": "{{note}}",
+      "baseVersions": { "title": 1, "body": 1, "pinned": 1, "trashed": 1 },
+      "createdAt": "2026-11-03T12:00:00Z",
+      "title": "Shopping"
+    }
+  ]
+}
+
+### A pull with a bad cursor.
+# Expect: 400 VALIDATION_FAILED
+GET {{baseUrl}}/api/v1/sync/pull?since=abc
+Authorization: Bearer {{login.response.body.$.accessToken}}
+
+### A new access token and refresh token. The old refresh token stops working.
+# Expect: 200
+# @name refresh
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{login.response.body.$.refreshToken}}"
+}
+
+### Using the old refresh token again.
+# Expect: 401 TOKEN_INVALID
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{login.response.body.$.refreshToken}}"
+}
+
+### Sign out: revokes the refresh token. No response body.
+# Expect: 204
+POST {{baseUrl}}/api/v1/auth/logout
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh.response.body.$.refreshToken}}"
+}
+
+### That refresh token no longer works either.
+# Expect: 401 TOKEN_INVALID
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh.response.body.$.refreshToken}}"
+}
