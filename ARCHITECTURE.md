@@ -6,7 +6,7 @@
 >
 > **Living document:** when the design changes, update this file in the same commit as the code and add an entry to the [Decision log](#15-decision-log).
 >
-> **Placeholders:** `syncnotes-api` stands for your Fly.io app name (not yet chosen). The Android package is `com.jezrel.syncnotes`.
+> The Fly.io app is `sync-notes`. The Android package is `com.jezrel.syncnotes`.
 
 ---
 
@@ -769,6 +769,7 @@ erDiagram
         uuid device_id
         timestamptz expires_at
         timestamptz revoked_at
+        uuid replaced_by "set by a rotation, section 10.2"
         timestamptz created_at
     }
 ```
@@ -822,6 +823,12 @@ CREATE TABLE refresh_tokens (
 );
 
 CREATE INDEX refresh_tokens_user_idx ON refresh_tokens (user_id);
+```
+
+`V2__refresh_token_replaced_by.sql` adds which token replaced this one in a rotation (§10.2). A token revoked any other way has none:
+
+```sql
+ALTER TABLE refresh_tokens ADD COLUMN replaced_by UUID;
 ```
 
 Design notes:
@@ -1542,6 +1549,7 @@ class SyncEngine @Inject constructor(
 | Timeout after the server applied a push | `IOException` | Retried later. Same values give `NOOP` (M2). Newer edits aren't a conflict with itself (last-writer check) |
 | Server error or rate limit (5xx, 429) | HTTP status | `Result.retry()` with exponential backoff from 10 s, up to 5 attempts. The periodic sync keeps going |
 | Access token expired | 401 | OkHttp's `Authenticator` refreshes once and retries the request |
+| Response to a refresh lost | `IOException` | Retry with the same token within 30 seconds: the grace period (§10.2) issues a new pair |
 | Refresh token expired or revoked | 401 from `/auth/refresh` | Session becomes "expired". Local notes and dirty bits are kept. The app asks the user to sign in again |
 | A note fails validation | `REJECTED` result | `sync_error` set, note skipped until edited, warning icon on the note |
 | App killed during a push | — | The results were never applied, so the next sync pushes again and gets `NOOP` or a clean merge |
@@ -1603,7 +1611,11 @@ Fix B was chosen because nothing that depends on it is built yet (server: Phase 
 | Access | JWT, HS256, `sub` = user id | 15 minutes | Not stored | Memory only |
 | Refresh | 32 random bytes, base64url | 30 days, replaced on every use | SHA-256 hash in `refresh_tokens` | Encrypted in DataStore (Keystore AES-GCM key) |
 
-**Rotation:** `/auth/refresh` revokes the token it receives and issues a new pair. Stretch goal for Phase 5: if a revoked token is used again (a sign of theft), revoke all of that user's tokens.
+**Rotation:** `/auth/refresh` revokes the token it receives and issues a new pair.
+
+**Grace period:** the old token is revoked before the response reaches the phone, so a lost response would otherwise sign the user out. For 30 seconds after a rotation, the old token can be used again. That cancels the replacement the phone never received, so one token stays live, and the 30 seconds don't restart. If the replacement was already used, the phone did receive it, so the old token is refused. Only a rotation gives a grace period: a token revoked by logout or by hand is final at once. Logging out with a token still in its grace period also ends its replacement. The cost is that someone who stole a token could use it during those 30 seconds, which would sign the real user out at their next refresh.
+
+Stretch goal for Phase 5: if a revoked token is used again (a sign of theft), revoke all of that user's tokens.
 
 ### 10.3 Auth flow
 
@@ -1640,7 +1652,7 @@ sequenceDiagram
 - **Gotcha:** when encoding, pass `JwsHeader.with(MacAlgorithm.HS256).build()` in `JwtEncoderParameters`. The default header is RS256, which fails with a secret key.
 - Controllers read the user id from `jwt.getSubject()`. Every SQL statement filters by it. A correctly signed token whose subject isn't a UUID gets the same 401 `TOKEN_INVALID` as a bad signature, never a 500. So does a push for an account that no longer exists (the row lock finds no user). A pull for one simply returns an empty page, because pull never reads `users`.
 - A 401 carries `WWW-Authenticate: Bearer` and a Problem Details body with `code: TOKEN_INVALID`.
-- Rotation is one atomic `UPDATE ... RETURNING`, so of two concurrent refreshes with the same token exactly one wins. Each rotation also deletes that user's tokens past their expiry. Revoked ones stay until then, which keeps the table bounded and leaves reuse detection possible.
+- Rotation locks the token's row, so concurrent refreshes with the same token run one at a time, and only the last one's token stays live. Each rotation also deletes that user's tokens past their expiry. Revoked ones stay until then, which keeps the table bounded and leaves reuse detection possible.
 - `AuthService` hashes before any transaction starts, so BCrypt never holds a database connection. Login checks a hash even for an unknown email, so timing doesn't reveal which emails have accounts.
 - Bucket4j: 10 requests per minute, per client and per endpoint, on login, register and refresh. Logout isn't limited. A refused request gets 429 `RATE_LIMITED` with `Retry-After`, before the body is read or a password hashed, and a refused refresh doesn't spend its token. Buckets are in memory: a restart resets them, and each machine counts separately, which is fine for one machine.
 - The client is `Fly-Client-IP`, because the connection's address is Fly's proxy; without that header (local runs) it's the connection's address. `X-Forwarded-For` is ignored because a client can write to it. IPv6 counts per /64, since one device is usually given a whole /64. Fly's docs don't say the proxy overwrites a client-supplied `Fly-Client-IP`, so step 2.10 checks that on the live server.
@@ -1993,7 +2005,7 @@ gantt
 |---|---|---|---|
 | Local, emulator | debug | `http://10.0.2.2:8090/` (the emulator's address for your laptop) | PostgreSQL in Docker |
 | Local, physical phone | debug | `http://localhost:8090/` after `adb reverse tcp:8090 tcp:8090` | PostgreSQL in Docker |
-| Production | release | `https://syncnotes-api.fly.dev/` | Neon |
+| Production | release | `https://sync-notes.fly.dev/` | Neon |
 
 The local server listens on **8090**, set in the `local` profile, because 8080 is commonly taken on a development machine (here, by Jenkins). Production keeps Spring's default 8080 inside the container behind Fly.io's proxy.
 
@@ -2027,7 +2039,7 @@ android {
         }
         release {
             isMinifyEnabled = true
-            buildConfigField("String", "API_BASE_URL", "\"https://syncnotes-api.fly.dev/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://sync-notes.fly.dev/\"")
         }
     }
 }

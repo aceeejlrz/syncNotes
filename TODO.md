@@ -10,18 +10,18 @@ Scratch space for the next change and open questions
   Run the server suite with `cd server && ./mvnw test` (JAVA_HOME = JDK 25, Docker running).
 - [x] **2.6 obligations to MergeEngine.** Done: `NoteLimits.truncate`, code-point checks, and
   `SyncServiceTest` covers both.
-- [ ] **Decide before Phase 3: a lost refresh response signs the user out.** Rotation revokes the
-  old token before the response reaches the phone. If that response is lost (network drop), the
-  phone only holds a revoked token and the next refresh is a 401: session expired, sign in again.
-  No data is lost (notes stay and sync afterwards), but it could surprise on flaky networks. The
-  usual fix is a short grace period for the just-replaced token. Not in the blueprint; see section 10.2.
+- [x] **A lost refresh response no longer signs the user out:** 30-second grace period (section 10.2).
+  For 3.5/3.8: after an `IOException` on refresh, keep the old token and retry within 30 seconds.
 - [x] **The local dev signing key moved to `server/.env`** (gitignored; see `.env.example`). The
   old key stays readable in git history, so it must never be used for anything, and the new one
   is different. The test key stays committed: CI needs it, and it only signs test tokens.
 - [ ] **2.10 deploy needs `JWT_SECRET`** set as a Fly.io secret (`openssl rand -base64 32`).
-- [ ] **2.10: choose the machine size.** 512 MB is measured to handle everything tested (section
-  14.4). 256 MB needs the lighter JVM settings and can't serve the worst-case pull. Also set
-  `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=5` in `fly.toml` (section 14.4).
+- [ ] **2.10: `fly.toml`.** 512 MB (decided; section 14.4), app `sync-notes`, health check on
+  `/actuator/health`, `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=5`, and the same region as Neon.
+  Fly app names are global, so `sync-notes` may be taken: `fly launch` will say.
+- [ ] **2.10: Neon.** The Neon project exists (`lingering-field-06940967`, branch `production`), but
+  its setup steps are written for Node apps. This server only needs the direct connection string as
+  JDBC settings in Fly secrets (section 14.4); check its PostgreSQL version matches 17.
 - [ ] **Bound pull pages by size, not only by count.** One pull holds its whole page in memory, so
   the worst case grows with `limit` (200 huge notes: 80 MB response, 424 MB peak). `limit=500` of
   huge notes wasn't tested and would likely exhaust a 512 MB machine, and with exit-on-OOM that
@@ -41,7 +41,7 @@ Scratch space for the next change and open questions
 ## Now (Phase 0)
 
 - [ ] Confirm the app builds **and runs on a device/emulator** with Hilt (exit criterion).
-- [ ] Push to GitHub and confirm the `android` CI workflow goes green (step 0.6).
+- [x] Push to GitHub and confirm the `android` CI workflow goes green (step 0.6): green on `main` at `f7a9e70`.
 
 ## Deferred from Phase 0 → Phase 1
 
@@ -75,5 +75,5 @@ rules, worked examples, the editor race). Questions so far:
 - [x] **§9 sync model.** Built; it found two holes in the v1.4 rules (lost text, false conflicts).
   Fix B adopted: per-field base versions (ADR-018); the blueprint was updated and the model passes.
   Phase 4 adds the base columns to the app (schema v2, step 4.1).
-- [ ] Decide the Fly.io app name (currently the `syncnotes-api` placeholder in the doc).
+- [x] Fly.io app name: `sync-notes` ("Sync Notes" as a valid name).
 - [ ] License for the repo (README says TBD).

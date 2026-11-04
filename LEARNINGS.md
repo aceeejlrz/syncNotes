@@ -9,6 +9,13 @@ Format: newest first. Each entry is a short heading, what happened, and why it m
 
 ## Phase 2 — Backend
 
+### A grace period needs "replaced" and "revoked" to differ
+Accepting any recently revoked token would let a logged-out or manually revoked token work again, so
+a `replaced_by` column marks only rotations. Retrying then cancels the unreceived replacement, which
+keeps one live token, and a used replacement proves the phone got it, so the old token is refused.
+The window is measured from the first revocation, so retries can't extend it. A row lock replaced the
+atomic UPDATE, because the decision now needs to read before it writes.
+
 ### A request file can be a test
 `docs/api.http` states what each request should return, and `ApiHttpFileTest` runs the file from top
 to bottom against the real server and compares. So the file can't drift from the API, and CI says so
