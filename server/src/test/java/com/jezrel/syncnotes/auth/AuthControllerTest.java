@@ -28,7 +28,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-/** Accounts and tokens over HTTP against real PostgreSQL 17 (sections 8.2, 8.3, 10). */
+/** Accounts and tokens over HTTP against real PostgreSQL 18 (sections 8.2, 8.3, 10). */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration.class)

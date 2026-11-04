@@ -40,7 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Step 2.8: the whole server as a client sees it, over real HTTP through real Tomcat, against real
- * PostgreSQL 17. Everything here goes through the public API; SQL is only used to check the
+ * PostgreSQL 18. Everything here goes through the public API; SQL is only used to check the
  * stored result or to set up a state the API can't reach.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)

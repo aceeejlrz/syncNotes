@@ -6,7 +6,7 @@ Scratch space for the next change and open questions
 ## Now (Phase 2)
 
 - [x] **Docker verified.** 2.2 (compose PostgreSQL + local profile on 8090) and 2.3 (Flyway
-  applies `V1__init.sql`) pass; 2.5 repository and row-lock tests run against PostgreSQL 17.
+  applies `V1__init.sql`) pass; 2.5 repository and row-lock tests run against PostgreSQL (18, matching Neon).
   Run the server suite with `cd server && ./mvnw test` (JAVA_HOME = JDK 25, Docker running).
 - [x] **2.6 obligations to MergeEngine.** Done: `NoteLimits.truncate`, code-point checks, and
   `SyncServiceTest` covers both.
@@ -16,12 +16,12 @@ Scratch space for the next change and open questions
   old key stays readable in git history, so it must never be used for anything, and the new one
   is different. The test key stays committed: CI needs it, and it only signs test tokens.
 - [ ] **2.10 deploy needs `JWT_SECRET`** set as a Fly.io secret (`openssl rand -base64 32`).
-- [ ] **2.10: `fly.toml`.** 512 MB (decided; section 14.4), app `sync-notes`, health check on
-  `/actuator/health`, `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=5`, and the same region as Neon.
-  Fly app names are global, so `sync-notes` may be taken: `fly launch` will say.
-- [ ] **2.10: Neon.** The Neon project exists (`lingering-field-06940967`, branch `production`), but
-  its setup steps are written for Node apps. This server only needs the direct connection string as
-  JDBC settings in Fly secrets (section 14.4); check its PostgreSQL version matches 17.
+- [x] **2.10: `fly.toml`** is written and validates: 512 MB, `sync-notes`, region `ord`. Fly app names
+  are global, so `sync-notes` may be taken: creating the app will say.
+- [x] **2.10: Neon connection checked** with the server's driver, read-only: PostgreSQL 18.6, empty
+  database, direct host. Local runs and CI moved from 17 to 18 to match.
+- [ ] **2.10: create the app, set its secrets, deploy,** then run `docs/api.http` against it and
+  the `Fly-Client-IP` check below.
 - [ ] **Bound pull pages by size, not only by count.** One pull holds its whole page in memory, so
   the worst case grows with `limit` (200 huge notes: 80 MB response, 424 MB peak). `limit=500` of
   huge notes wasn't tested and would likely exhaust a 512 MB machine, and with exit-on-OOM that

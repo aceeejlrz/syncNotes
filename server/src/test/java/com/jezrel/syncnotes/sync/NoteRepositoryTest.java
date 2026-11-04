@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-/** NoteRepository against real PostgreSQL 17 (Testcontainers) with the Flyway schema. */
+/** NoteRepository against real PostgreSQL 18 (Testcontainers) with the Flyway schema. */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class NoteRepositoryTest {

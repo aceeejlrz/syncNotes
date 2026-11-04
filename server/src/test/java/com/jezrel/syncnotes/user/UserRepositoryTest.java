@@ -17,7 +17,7 @@ import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** UserRepository and the per-user row lock (section 9.3) against real PostgreSQL 17. */
+/** UserRepository and the per-user row lock (section 9.3) against real PostgreSQL 18. */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class UserRepositoryTest {

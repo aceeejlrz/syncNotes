@@ -25,7 +25,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** SyncService against real PostgreSQL 17: transactions, change numbers and stamping (9.5, 9.6). */
+/** SyncService against real PostgreSQL 18: transactions, change numbers and stamping (9.5, 9.6). */
 @SpringBootTest
 @Import(TestcontainersConfiguration.class)
 class SyncServiceTest {

@@ -1,0 +1,26 @@
+# Fly.io deployment (section 14.4). Secrets are set with `fly secrets set`, never here:
+# JWT_SECRET, SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD.
+app = "sync-notes"
+primary_region = "ord"            # Chicago, the nearest to Neon's us-east-2 (Ohio)
+
+[env]
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE = "5"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"     # stops when idle; the first request after that takes a few seconds
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/actuator/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "30s"          # JVM startup, Flyway, and Neon waking up
+
+[[vm]]
+  memory = "512mb"                # measured in section 14.4; 256 MB gets killed under load
+  cpu_kind = "shared"
+  cpus = 1

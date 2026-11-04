@@ -2066,10 +2066,10 @@ Reference it from the manifest with `android:networkSecurityConfig="@xml/network
 
 ### 14.4 Production
 
-1. **Neon:** create a project named `syncnotes`. Use the **direct** (non-pooled) connection string for both the app and Flyway, with a small connection pool (about 5).
+1. **Neon:** PostgreSQL 18 in AWS `us-east-2`, database `sndb`. Use the **direct** connection (the host without `-pooler`) for both the app and Flyway, with a small connection pool (about 5). As JDBC settings: `SPRING_DATASOURCE_URL=jdbc:postgresql://<host>/sndb?sslmode=require&channelBinding=require`, with the username and password as their own secrets. Local runs and CI use PostgreSQL 18 too.
 2. **Image:** `server/Dockerfile` builds the jar and runs it as a non-root user on port 8080. Tests don't run in the build; CI runs them.
 3. **Machine size: 512 MB.** Measured with `--memory` and one CPU: startup takes about 4 s and about 185 MB, four largest-allowed pushes (20 MB each) pass, and so does a pull of 200 notes of 100,000 emoji (80 MB), with a peak of 424 MB. On 256 MB with the default settings, the kernel kills the process during heavy pushes. 256 MB can work with `JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=40 -XX:+ExitOnOutOfMemoryError -XX:TieredStopAtLevel=1 -Xss512k"`, but the 200-note pull then runs out of memory.
-4. **Fly.io:** `fly launch --no-deploy` in `server/`, then set secrets with `fly secrets set` for the database URL, username, password and `JWT_SECRET` (a random 256-bit value). Configure the HTTP health check on `/actuator/health`.
+4. **Fly.io:** `server/fly.toml` holds the app name, region (`ord`, the nearest to Neon), machine size and health check. `fly apps create sync-notes`, then set secrets with `fly secrets set` for the database URL, username, password and `JWT_SECRET` (a random 256-bit value).
 5. **Deploy:** `fly deploy`. Machines stop when idle, so the first request after a pause can take a few seconds. The app's 30-second read timeout and background sync absorb that.
 6. **Logs:** `fly logs`.
 
